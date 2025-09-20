@@ -1,0 +1,5 @@
+{
+  "name": "Price Action K-Line Analyzer",
+  "description": "A tool to analyze cryptocurrency K-line charts using Al Brooks' price action strategies, fetching real-time data from Binance.",
+  "requestFramePermissions": []
+}

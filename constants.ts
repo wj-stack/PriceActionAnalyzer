@@ -1,0 +1,101 @@
+import { PatternType } from './types';
+
+export const FALLBACK_SYMBOLS = [
+    // Pinned Majors
+    { value: 'BTCUSDT', label: 'BTC/USDT' },
+    { value: 'ETHUSDT', label: 'ETH/USDT' },
+    { value: 'SOLUSDT', label: 'SOL/USDT' },
+    { value: 'BNBUSDT', label: 'BNB/USDT' },
+    // Rest of symbols sorted alphabetically
+    { value: 'AAVEUSDT', label: 'AAVE/USDT' },
+    { value: 'ADAUSDT', label: 'ADA/USDT' },
+    { value: 'ALGOUSDT', label: 'ALGO/USDT' },
+    { value: 'APTUSDT', label: 'APT/USDT' },
+    { value: 'ARBUSDT', label: 'ARB/USDT' },
+    { value: 'ATOMUSDT', label: 'ATOM/USDT' },
+    { value: 'AVAXUSDT', label: 'AVAX/USDT' },
+    { value: 'AXSUSDT', label: 'AXS/USDT' },
+    { value: 'BBUSDT', label: 'BB/USDT' },
+    { value: 'BCHUSDT', label: 'BCH/USDT' },
+    { value: 'BONKUSDT', label: 'BONK/USDT' },
+    { value: 'COMPUSDT', label: 'COMP/USDT' },
+    { value: 'DOGEUSDT', label: 'DOGE/USDT' },
+    { value: 'DOTUSDT', label: 'DOT/USDT' },
+    { value: 'ENAUSDT', label: 'ENA/USDT' },
+    { value: 'FILUSDT', label: 'FIL/USDT' },
+    { value: 'FTMUSDT', label: 'FTM/USDT' },
+    { value: 'IOUSDT', label: 'IO/USDT' },
+    { value: 'JTOUSDT', label: 'JTO/USDT' },
+    { value: 'JUPUSDT', label: 'JUP/USDT' },
+    { value: 'LINKUSDT', label: 'LINK/USDT' },
+    { value: 'LTCUSDT', label: 'LTC/USDT' },
+    { value: 'MANAUSDT', label: 'MANA/USDT' },
+    { value: 'MATICUSDT', label: 'MATIC/USDT' },
+    { value: 'MKRUSDT', label: 'MKR/USDT' },
+    { value: 'NEARUSDT', label: 'NEAR/USDT' },
+    { value: 'NOTUSDT', label: 'NOT/USDT' },
+    { value: 'ONDOUSDT', label: 'ONDO/USDT' },
+    { value: 'OPUSDT', label: 'OP/USDT' },
+    { value: 'ORDIUSDT', label: 'ORDI/USDT' },
+    { value: 'PEPEUSDT', label: 'PEPE/USDT' },
+    { value: 'PYTHUSDT', label: 'PYTH/USDT' },
+    { value: 'SANDUSDT', label: 'SAND/USDT' },
+    { value: 'SHIBUSDT', label: 'SHIB/USDT' },
+    { value: 'SNXUSDT', label: 'SNX/USDT' },
+    { value: 'SUIUSDT', label: 'SUI/USDT' },
+    { value: 'TIAUSDT', label: 'TIA/USDT' },
+    { value: 'TRXUSDT', label: 'TRX/USDT' },
+    { value: 'UNIUSDT', label: 'UNI/USDT' },
+    { value: 'VETUSDT', label: 'VET/USDT' },
+    { value: 'WIFUSDT', label: 'WIF/USDT' },
+    { value: 'WLDUSDT', label: 'WLD/USDT' },
+    { value: 'XRPUSDT', label: 'XRP/USDT' },
+    { value: 'ZROUSDT', label: 'ZRO/USDT' },
+];
+
+export const TIMEFRAMES = [
+    { value: '1s', label: '1 Second' },
+    { value: '1m', label: '1 Minute' },
+    { value: '3m', label: '3 Minutes' },
+    { value: '5m', label: '5 Minutes' },
+    { value: '15m', label: '15 Minutes' },
+    { value: '30m', label: '30 Minutes' },
+    { value: '1h', label: '1 Hour' },
+    { value: '2h', label: '2 Hours' },
+    { value: '4h', label: '4 Hours' },
+    { value: '6h', label: '6 Hours' },
+    { value: '8h', label: '8 Hours' },
+    { value: '12h', label: '12 Hours' },
+    { value: '1d', label: '1 Day' },
+    { value: '3d', label: '3 Days' },
+    { value: '1w', label: '1 Week' },
+    { value: '1mo', label: '1 Month' },
+];
+
+export const ALL_PATTERNS = [
+    // Reversal Patterns
+    { name: 'hammer', type: PatternType.Reversal, labelKey: 'hammer' },
+    { name: 'shootingStar', type: PatternType.Reversal, labelKey: 'shootingStar' },
+    { name: 'bullishEngulfing', type: PatternType.Reversal, labelKey: 'bullishEngulfing' },
+    { name: 'bearishEngulfing', type: PatternType.Reversal, labelKey: 'bearishEngulfing' },
+    { name: 'doji', type: PatternType.Reversal, labelKey: 'doji' },
+    { name: 'bullishHarami', type: PatternType.Reversal, labelKey: 'bullishHarami' },
+    { name: 'bearishHarami', type: PatternType.Reversal, labelKey: 'bearishHarami' },
+    { name: 'bullishOutsideBar', type: PatternType.Reversal, labelKey: 'bullishOutsideBar' },
+    { name: 'bearishOutsideBar', type: PatternType.Reversal, labelKey: 'bearishOutsideBar' },
+    
+    // Trend Patterns
+    { name: 'bullishBreakout', type: PatternType.Trend, labelKey: 'bullishBreakout' },
+    { name: 'bearishBreakout', type: PatternType.Trend, labelKey: 'bearishBreakout' },
+    { name: 'emaPullbackBull', type: PatternType.Trend, labelKey: 'emaPullbackBull' },
+    { name: 'emaPullbackBear', type: PatternType.Trend, labelKey: 'emaPullbackBear' },
+    { name: 'threeSoldiers', type: PatternType.Trend, labelKey: 'threeSoldiers' },
+    { name: 'threeCrows', type: PatternType.Trend, labelKey: 'threeCrows' },
+
+    // Range Patterns
+    { name: 'failedBullishBreakout', type: PatternType.Range, labelKey: 'failedBullishBreakout' },
+    { name: 'failedBearishBreakout', type: PatternType.Range, labelKey: 'failedBearishBreakout' },
+];
+
+export const BACKTEST_INITIAL_CAPITAL = 10000; // in USDT
+export const BACKTEST_COMMISSION_RATE = 0.001; // 0.1% per trade side
