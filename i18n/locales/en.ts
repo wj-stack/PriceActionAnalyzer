@@ -1,4 +1,3 @@
-
 export const en = {
   // App.tsx
   'appTitle': 'Price Action Analyzer',
@@ -13,6 +12,7 @@ export const en = {
   'searchSymbol': 'Search Symbol...',
   'noSymbolsFound': 'No symbols found.',
   'loadingSymbols': 'Loading...',
+  'loadingMore': 'Loading more...',
   'timeframe': 'Timeframe',
   'refreshAriaLabel': 'Refresh Data',
   'language': 'Language',

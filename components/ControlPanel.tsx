@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { TIMEFRAMES, ALL_PATTERNS } from '../constants';
 import { RefreshIcon } from './icons/RefreshIcon';
@@ -95,10 +94,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isSymbolDropdownOpen, setIsSymbolDropdownOpen] = useState(false);
     const [symbolSearch, setSymbolSearch] = useState('');
+    const [visibleSymbolCount, setVisibleSymbolCount] = useState(50);
 
     const filterMenuRef = useRef<HTMLDivElement>(null);
     const settingsMenuRef = useRef<HTMLDivElement>(null);
     const symbolDropdownRef = useRef<HTMLDivElement>(null);
+    const symbolListRef = useRef<HTMLUListElement>(null);
     
     const baseSelectorClasses = "bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all duration-200 text-sm";
     const disabledClasses = "disabled:opacity-50 disabled:cursor-not-allowed";
@@ -169,6 +170,40 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         );
     }, [symbolSearch, symbols]);
 
+    const paginatedSymbols = useMemo(() => {
+        return filteredSymbols.slice(0, visibleSymbolCount);
+    }, [filteredSymbols, visibleSymbolCount]);
+
+    const hasMoreSymbols = useMemo(() => {
+        return visibleSymbolCount < filteredSymbols.length;
+    }, [visibleSymbolCount, filteredSymbols.length]);
+
+    useEffect(() => {
+        // Reset scroll and visible count when search term changes
+        setVisibleSymbolCount(50);
+        if (symbolListRef.current) {
+            symbolListRef.current.scrollTop = 0;
+        }
+    }, [symbolSearch]);
+
+    useEffect(() => {
+        // Also reset when dropdown is opened
+        if (isSymbolDropdownOpen) {
+            setVisibleSymbolCount(50);
+        }
+    }, [isSymbolDropdownOpen]);
+
+    const handleScroll = () => {
+        const listElement = symbolListRef.current;
+        if (listElement) {
+            const { scrollTop, scrollHeight, clientHeight } = listElement;
+            // Load more when user is near the bottom (e.g., 50px from the end)
+            if (scrollHeight - scrollTop - clientHeight < 50 && hasMoreSymbols) {
+                setVisibleSymbolCount(prevCount => Math.min(prevCount + 50, filteredSymbols.length));
+            }
+        }
+    };
+
     const selectedSymbolData = useMemo(() => symbols.find(s => s.value === symbol), [symbols, symbol]);
 
 
@@ -227,8 +262,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                     autoFocus
                                 />
                             </div>
-                            <ul className="max-h-60 overflow-y-auto" role="listbox">
-                                {filteredSymbols.length > 0 ? filteredSymbols.map(s => (
+                            <ul ref={symbolListRef} onScroll={handleScroll} className="max-h-60 overflow-y-auto" role="listbox">
+                                {paginatedSymbols.length > 0 ? paginatedSymbols.map(s => (
                                     <li key={s.value} role="option" aria-selected={s.value === symbol}>
                                         <button
                                             type="button"
@@ -245,6 +280,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                     </li>
                                 )) : (
                                     <li className="px-3 py-2 text-gray-500">{t('noSymbolsFound')}</li>
+                                )}
+                                {hasMoreSymbols && (
+                                    <li className="px-3 py-2 text-center text-gray-500 text-xs animate-pulse">
+                                        {t('loadingMore')}
+                                    </li>
                                 )}
                             </ul>
                         </div>

@@ -1,4 +1,3 @@
-
 export const zh = {
   // App.tsx
   'appTitle': '价格行为分析器',
@@ -13,6 +12,7 @@ export const zh = {
   'searchSymbol': '搜索交易对...',
   'noSymbolsFound': '未找到交易对。',
   'loadingSymbols': '加载中...',
+  'loadingMore': '加载更多...',
   'timeframe': '时间周期',
   'refreshAriaLabel': '刷新数据',
   'language': '语言',
