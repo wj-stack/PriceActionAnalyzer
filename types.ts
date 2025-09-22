@@ -61,3 +61,14 @@ export interface BacktestSettings {
     volumeMaPeriod?: number;
     volumeThreshold?: number;
 }
+
+export interface AlphaToken {
+    alphaId: string;
+    symbol: string;
+    name: string;
+    chainId: string;
+    contractAddress: string;
+    chainIconUrl: string;
+    chainName: string;
+    iconUrl:string;
+}

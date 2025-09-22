@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { TIMEFRAMES, ALL_PATTERNS } from '../constants';
 import { RefreshIcon } from './icons/RefreshIcon';
@@ -5,10 +6,11 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { FilterIcon } from './icons/FilterIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { SettingsIcon } from './icons/SettingsIcon';
+import { DatabaseIcon } from './icons/DatabaseIcon';
 import { PatternType, BacktestStrategy } from '../types';
 
 interface ControlPanelProps {
-    symbols: { value: string; label: string; }[];
+    symbols: { value: string; label: string; baseAssetLogoUrl?: string; quoteAssetLogoUrl?: string; isAlpha?: boolean; }[];
     isSymbolsLoading: boolean;
     symbol: string;
     setSymbol: (symbol: string) => void;
@@ -23,6 +25,7 @@ interface ControlPanelProps {
     selectedPatterns: Set<string>;
     setSelectedPatterns: (patterns: Set<string>) => void;
     onRunBacktest: () => void;
+    onShowTokenList: () => void;
     stopLoss: number;
     setStopLoss: (value: number) => void;
     takeProfit: number;
@@ -51,6 +54,20 @@ const formatDateForInput = (date: Date): string => {
     return date.toISOString().split('T')[0];
 };
 
+const CoinPairIcons: React.FC<{ baseSrc?: string; quoteSrc?: string }> = ({ baseSrc, quoteSrc }) => {
+    if (!baseSrc) {
+        return <div className="w-5 h-5 rounded-full bg-gray-600 flex-shrink-0" />; // Fallback circle
+    }
+    return (
+        <div className="relative w-8 h-5 flex-shrink-0">
+            <img src={baseSrc} alt="" className="w-5 h-5 rounded-full absolute left-0 top-0 z-10" />
+            {quoteSrc && (
+                <img src={quoteSrc} alt="" className="w-5 h-5 rounded-full absolute left-3 top-0 border-2 border-gray-800" />
+            )}
+        </div>
+    );
+};
+
 export const ControlPanel: React.FC<ControlPanelProps> = ({ 
     symbols, isSymbolsLoading,
     symbol, setSymbol, 
@@ -60,6 +77,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     endDate, setEndDate,
     selectedPatterns, setSelectedPatterns,
     onRunBacktest,
+    onShowTokenList,
     stopLoss, setStopLoss,
     takeProfit, setTakeProfit,
     backtestStrategy, setBacktestStrategy,
@@ -151,6 +169,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         );
     }, [symbolSearch, symbols]);
 
+    const selectedSymbolData = useMemo(() => symbols.find(s => s.value === symbol), [symbols, symbol]);
+
 
     return (
         <div className="flex items-center gap-4 flex-wrap">
@@ -177,11 +197,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         type="button"
                         onClick={() => setIsSymbolDropdownOpen(!isSymbolDropdownOpen)}
                         disabled={isLoading || isSymbolsLoading}
-                        className={`${baseSelectorClasses} ${disabledClasses} w-36 text-left flex justify-between items-center`}
+                        className={`${baseSelectorClasses} ${disabledClasses} w-44 text-left flex justify-between items-center`}
                         aria-haspopup="listbox"
                         aria-expanded={isSymbolDropdownOpen}
                     >
-                        <span className="truncate">{isSymbolsLoading ? t('loadingSymbols') : (symbols.find(s => s.value === symbol)?.label || symbol)}</span>
+                         <div className="flex items-center gap-2 truncate">
+                            {isSymbolsLoading ? (
+                                <span className="truncate">{t('loadingSymbols')}</span>
+                            ) : selectedSymbolData ? (
+                                <>
+                                    <CoinPairIcons baseSrc={selectedSymbolData.baseAssetLogoUrl} quoteSrc={selectedSymbolData.quoteAssetLogoUrl} />
+                                    <span className="truncate">{selectedSymbolData.label}</span>
+                                </>
+                            ) : (
+                                <span className="truncate">{symbol}</span>
+                            )}
+                        </div>
                         <svg className={`w-4 h-4 ml-2 flex-shrink-0 transition-transform ${isSymbolDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
                     </button>
                     {isSymbolDropdownOpen && (
@@ -206,8 +237,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                                                 setIsSymbolDropdownOpen(false);
                                                 setSymbolSearch('');
                                             }}
-                                            className="w-full text-left px-3 py-2 hover:bg-gray-700/50 transition-colors text-gray-200"
+                                            className="w-full text-left px-3 py-2 hover:bg-gray-700/50 transition-colors text-gray-200 flex items-center gap-2"
                                         >
+                                            <CoinPairIcons baseSrc={s.baseAssetLogoUrl} quoteSrc={s.quoteAssetLogoUrl} />
                                             {s.label}
                                         </button>
                                     </li>
@@ -362,6 +394,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
              <button onClick={onRunBacktest} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('runBacktest')}>
                 <CalculatorIcon className="w-5 h-5" />
+            </button>
+             <button onClick={onShowTokenList} disabled={isLoading || isSymbolsLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('showTokenList')}>
+                <DatabaseIcon className="w-5 h-5" />
             </button>
             <button onClick={onRefresh} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('refreshAriaLabel')}>
                 <RefreshIcon className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />

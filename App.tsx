@@ -6,17 +6,18 @@ import { SignalList } from './components/SignalList';
 import { StrategyModal } from './components/StrategyModal';
 import { BacktestModal } from './components/BacktestModal';
 import { PatternDetailModal } from './components/PatternDetailModal';
-import { fetchKlines, fetchExchangeInfo } from './services/binanceService';
+import { TokenListModal } from './components/TokenListModal';
+import { fetchKlines, fetchExchangeInfo, fetchAlphaTokenList } from './services/binanceService';
 import { analyzeCandles } from './services/patternRecognizer';
 import { getTradingStrategy } from './services/aiService';
 import { runBacktest, BacktestResult } from './services/backtestService';
-import type { Candle, DetectedPattern, BacktestStrategy } from './types';
+import type { Candle, DetectedPattern, BacktestStrategy, AlphaToken } from './types';
 import { FALLBACK_SYMBOLS, ALL_PATTERNS, BACKTEST_INITIAL_CAPITAL, BACKTEST_COMMISSION_RATE } from './constants';
 import { LogoIcon } from './components/icons/LogoIcon';
 import { useLanguage } from './contexts/LanguageContext';
 
 const App: React.FC = () => {
-    const [symbolsList, setSymbolsList] = useState<{ value: string; label: string; }[]>([]);
+    const [symbolsList, setSymbolsList] = useState<{ value: string; label: string; baseAssetLogoUrl?: string; quoteAssetLogoUrl?: string; isAlpha?: boolean; }[]>([]);
     const [isSymbolsLoading, setIsSymbolsLoading] = useState<boolean>(true);
     const [symbol, setSymbol] = useState<string>('BTCUSDT');
     const [timeframe, setTimeframe] = useState<string>('4h');
@@ -50,6 +51,10 @@ const App: React.FC = () => {
     const [isPatternDetailModalOpen, setIsPatternDetailModalOpen] = useState<boolean>(false);
     const [selectedPatternForDetail, setSelectedPatternForDetail] = useState<string | null>(null);
 
+    // Token List Modal State
+    const [isTokenListModalOpen, setIsTokenListModalOpen] = useState<boolean>(false);
+    const [alphaTokens, setAlphaTokens] = useState<AlphaToken[]>([]);
+
     // Backtest State
     const [isBacktestModalOpen, setIsBacktestModalOpen] = useState<boolean>(false);
     const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
@@ -64,13 +69,14 @@ const App: React.FC = () => {
     const [useVolumeFilter, setUseVolumeFilter] = useState<boolean>(false);
     const [volumeMaPeriod, setVolumeMaPeriod] = useState<number>(20);
     const [volumeThreshold, setVolumeThreshold] = useState<number>(1.5);
-    
+
     useEffect(() => {
         const loadSymbols = async () => {
             setIsSymbolsLoading(true);
             try {
-                const fetchedSymbols = await fetchExchangeInfo();
-                setSymbolsList(fetchedSymbols);
+                const { combinedSymbols, alphaTokenDetails } = await fetchExchangeInfo();
+                setSymbolsList(combinedSymbols);
+                setAlphaTokens(alphaTokenDetails);
             } catch (e) {
                 console.error("Failed to fetch symbols from Binance API, using fallback list.", e);
                 setSymbolsList(FALLBACK_SYMBOLS);
@@ -91,12 +97,16 @@ const App: React.FC = () => {
             const finalEndDate = new Date(endDate);
             finalEndDate.setHours(23, 59, 59, 999);
 
+            const selectedSymbolData = symbolsList.find(s => s.value === symbol);
+            const isAlpha = selectedSymbolData?.isAlpha ?? false;
+
             const klineData = await fetchKlines(
                 symbol,
                 timeframe,
                 1000,
                 startDate.getTime(),
-                finalEndDate.getTime()
+                finalEndDate.getTime(),
+                isAlpha
             );
             setCandles(klineData);
             const detectedPatterns = analyzeCandles(klineData);
@@ -107,7 +117,7 @@ const App: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [symbol, timeframe, startDate, endDate, t]);
+    }, [symbol, timeframe, startDate, endDate, t, symbolsList]);
 
     useEffect(() => {
         if (!isSymbolsLoading) {
@@ -175,6 +185,11 @@ const App: React.FC = () => {
         setIsBacktestModalOpen(true);
     };
 
+    const handleTokenSelect = (selectedSymbol: string) => {
+        setSymbol(selectedSymbol);
+        setIsTokenListModalOpen(false);
+    };
+
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
             <header className="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700 p-4 sticky top-0 z-20">
@@ -199,6 +214,7 @@ const App: React.FC = () => {
                         selectedPatterns={selectedPatterns}
                         setSelectedPatterns={setSelectedPatterns}
                         onRunBacktest={handleRunBacktest}
+                        onShowTokenList={() => setIsTokenListModalOpen(true)}
                         stopLoss={stopLoss}
                         setStopLoss={setStopLoss}
                         takeProfit={takeProfit}
@@ -263,6 +279,14 @@ const App: React.FC = () => {
                     isOpen={isPatternDetailModalOpen}
                     onClose={() => setIsPatternDetailModalOpen(false)}
                     patternName={selectedPatternForDetail}
+                />
+                <TokenListModal
+                    isOpen={isTokenListModalOpen}
+                    onClose={() => setIsTokenListModalOpen(false)}
+                    tokens={alphaTokens}
+                    isLoading={isSymbolsLoading}
+                    symbols={symbolsList}
+                    onTokenSelect={handleTokenSelect}
                 />
             </main>
              <footer className="text-center p-4 text-gray-500 text-sm mt-8">

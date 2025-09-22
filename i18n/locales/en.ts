@@ -1,3 +1,4 @@
+
 export const en = {
   // App.tsx
   'appTitle': 'Price Action Analyzer',
@@ -28,6 +29,7 @@ export const en = {
   'enableVolumeFilter': 'Enable Volume Filter',
   'volumeMaPeriod': 'Volume MA Period',
   'volumeThreshold': 'Volume Threshold (e.g., 1.5x)',
+  'showTokenList': 'Show Token List',
 
   // PriceChart.tsx
   'noData': 'No data available.',
@@ -56,6 +58,15 @@ export const en = {
 
   // Pattern Detail Modal
   'patternDetailsTitle': 'Pattern Calculation Details',
+
+  // Token List Modal
+  'tokenListTitle': 'Alpha Token List',
+  'searchTokens': 'Search by symbol or name...',
+  'tokenName': 'Name',
+  'tokenChain': 'Chain',
+  'tokenContract': 'Contract Address',
+  'loadingTokens': 'Loading token list...',
+  'noTokensFound': 'No tokens found.',
 
   // Backtest Modal
   'backtestResults': 'Backtest Results',

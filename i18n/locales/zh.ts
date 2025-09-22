@@ -1,3 +1,4 @@
+
 export const zh = {
   // App.tsx
   'appTitle': '价格行为分析器',
@@ -28,6 +29,7 @@ export const zh = {
   'enableVolumeFilter': '启用交易量过滤器',
   'volumeMaPeriod': '交易量均线周期',
   'volumeThreshold': '交易量阈值 (例如 1.5x)',
+  'showTokenList': '显示代币列表',
 
   // PriceChart.tsx
   'noData': '无可用数据。',
@@ -56,6 +58,15 @@ export const zh = {
 
   // Pattern Detail Modal
   'patternDetailsTitle': '形态计算详情',
+
+  // Token List Modal
+  'tokenListTitle': 'Alpha 代币列表',
+  'searchTokens': '按符号或名称搜索...',
+  'tokenName': '名称',
+  'tokenChain': '链',
+  'tokenContract': '合约地址',
+  'loadingTokens': '正在加载代币列表...',
+  'noTokensFound': '未找到代币。',
 
   // Backtest Modal
   'backtestResults': '回测结果',
