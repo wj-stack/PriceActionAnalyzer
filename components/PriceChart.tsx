@@ -190,7 +190,15 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, patterns, hoveredP
     
     const getTickFormatter = (numVisible: number) => {
         if (numVisible <= 30) {
-            return (time: number) => new Date(time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            return (time: number) => new Date(time * 1000).toLocaleString([], {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false,
+            });
         }
         if (numVisible <= 150) {
             return (time: number) => new Date(time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });

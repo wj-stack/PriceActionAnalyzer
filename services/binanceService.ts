@@ -150,7 +150,6 @@ export const fetchExchangeInfo = async (): Promise<{
         const alphaTokenDetailsMap = new Map<string, AlphaToken>();
         for (const token of alphaTokenDetails) {
             // The `symbol` from this list is the base asset, e.g., "ALPHA_105"
-            // console.log("symbol:",token.)
             alphaTokenDetailsMap.set(token.alphaId, token);
         }
 
@@ -184,7 +183,6 @@ export const fetchExchangeInfo = async (): Promise<{
             )
             .map(s => {
                 const details = alphaTokenDetailsMap.get(s.baseAsset);
-                console.log("details: ",details,"s: ",s);
                 return {
                     value: s.symbol, // e.g., "ALPHA_105USDT"
                     label: `${details?.name || s.baseAsset}/${s.quoteAsset}`, // e.g., "Some Token Name/USDT"
@@ -264,7 +262,6 @@ export const fetchKlines = async (symbol: string, interval: string, limit: numbe
         url += `&endTime=${Math.floor(endTime)}`;
     }
 
-    console.log("k line url:",url);
 
     try {
         const response = await fetch(url);
