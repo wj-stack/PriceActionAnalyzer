@@ -1,4 +1,5 @@
 
+
 export type BinanceKline = [
   number, // Kline open time
   string, // Open price
@@ -62,13 +63,62 @@ export interface BacktestSettings {
     volumeThreshold?: number;
 }
 
+// FIX: Add missing AlphaToken type to resolve an import error in TokenListModal.tsx
 export interface AlphaToken {
-    alphaId: string;
-    symbol: string;
-    name: string;
-    chainId: string;
-    contractAddress: string;
-    chainIconUrl: string;
-    chainName: string;
-    iconUrl:string;
+  alphaId: string;
+  symbol: string;
+  name: string;
+  chainId: string;
+  chainIconUrl: string;
+  contractAddress: string | null;
+}
+
+export interface AccountBalance {
+  asset: string;
+  free: string;
+  locked: string;
+}
+
+export interface AccountInfo {
+  balances: AccountBalance[];
+}
+
+export interface Order {
+  symbol: string;
+  orderId: number;
+  clientOrderId: string;
+  price: string;
+  origQty: string;
+  executedQty: string;
+  cummulativeQuoteQty: string;
+  status: 'NEW' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED' | 'PENDING_CANCEL' | 'REJECTED' | 'EXPIRED';
+  timeInForce: 'GTC' | 'IOC' | 'FOK';
+  type: 'LIMIT' | 'MARKET' | 'STOP_LOSS' | 'STOP_LOSS_LIMIT' | 'TAKE_PROFIT' | 'TAKE_PROFIT_LIMIT' | 'LIMIT_MAKER';
+  side: 'BUY' | 'SELL';
+  stopPrice: string;
+  icebergQty: string;
+  time: number;
+  updateTime: number;
+  isWorking: boolean;
+  origQuoteOrderQty: string;
+}
+
+export interface MultiTimeframeData {
+    timeframe: string;
+    candles: Candle[];
+    patterns: DetectedPattern[];
+    isPrimary: boolean;
+}
+
+export type MarketType = 'SPOT' | 'FUTURES';
+export type RiskAppetite = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export interface AIDecision {
+    decision: 'LONG' | 'SHORT' | 'WAIT';
+    reasoning: string;
+    entryPrice: string;
+    stopLoss: number;
+    takeProfitLevels: number[];
+    confidenceScore: number;
+    riskWarning: string;
 }

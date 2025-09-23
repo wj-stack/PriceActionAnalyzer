@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PriceChart } from './components/PriceChart';
@@ -6,12 +7,15 @@ import { SignalList } from './components/SignalList';
 import { StrategyModal } from './components/StrategyModal';
 import { BacktestModal } from './components/BacktestModal';
 import { PatternDetailModal } from './components/PatternDetailModal';
-import { TokenListModal } from './components/TokenListModal';
-import { fetchKlines, fetchExchangeInfo, fetchAlphaTokenList } from './services/binanceService';
+import { ApiKeyModal } from './components/ApiKeyModal';
+import { AccountInfo } from './components/AccountInfo';
+import { AIDecisionMakerModal } from './components/AIDecisionMakerModal';
+import { fetchKlines, fetchExchangeInfo } from './services/binanceService';
+import { getAccountInfo, getOpenOrders, getAllOrders } from './services/binanceAuthenticatedService';
 import { analyzeCandles } from './services/patternRecognizer';
 import { getTradingStrategy } from './services/aiService';
 import { runBacktest, BacktestResult } from './services/backtestService';
-import type { Candle, DetectedPattern, BacktestStrategy, AlphaToken } from './types';
+import type { Candle, DetectedPattern, BacktestStrategy, AccountBalance, Order } from './types';
 import { FALLBACK_SYMBOLS, ALL_PATTERNS, BACKTEST_INITIAL_CAPITAL, BACKTEST_COMMISSION_RATE } from './constants';
 import { LogoIcon } from './components/icons/LogoIcon';
 import { useLanguage } from './contexts/LanguageContext';
@@ -47,13 +51,12 @@ const App: React.FC = () => {
     const [aiStrategy, setAiStrategy] = useState<string | null>(null);
     const [strategyCache, setStrategyCache] = useState<Map<string, string>>(new Map());
 
+    // AI Decision Maker State
+    const [isDecisionMakerModalOpen, setIsDecisionMakerModalOpen] = useState<boolean>(false);
+
     // Pattern Detail Modal State
     const [isPatternDetailModalOpen, setIsPatternDetailModalOpen] = useState<boolean>(false);
     const [selectedPatternForDetail, setSelectedPatternForDetail] = useState<string | null>(null);
-
-    // Token List Modal State
-    const [isTokenListModalOpen, setIsTokenListModalOpen] = useState<boolean>(false);
-    const [alphaTokens, setAlphaTokens] = useState<AlphaToken[]>([]);
 
     // Backtest State
     const [isBacktestModalOpen, setIsBacktestModalOpen] = useState<boolean>(false);
@@ -69,14 +72,35 @@ const App: React.FC = () => {
     const [useVolumeFilter, setUseVolumeFilter] = useState<boolean>(false);
     const [volumeMaPeriod, setVolumeMaPeriod] = useState<number>(20);
     const [volumeThreshold, setVolumeThreshold] = useState<number>(1.5);
+    
+    // API Key State
+    const [apiKey, setApiKey] = useState<string>('');
+    const [apiSecret, setApiSecret] = useState<string>('');
+    const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
+
+    // Account Info State
+    const [accountBalances, setAccountBalances] = useState<AccountBalance[]>([]);
+    const [openOrders, setOpenOrders] = useState<Order[]>([]);
+    const [allOrders, setAllOrders] = useState<Order[]>([]);
+    const [isAccountLoading, setIsAccountLoading] = useState<boolean>(false);
+    const [accountError, setAccountError] = useState<string | null>(null);
+
+    // UI State
+    const [activeTab, setActiveTab] = useState<'signals' | 'account'>('signals');
+
+    useEffect(() => {
+        const storedApiKey = localStorage.getItem('binanceApiKey');
+        const storedApiSecret = localStorage.getItem('binanceApiSecret');
+        if (storedApiKey) setApiKey(storedApiKey);
+        if (storedApiSecret) setApiSecret(storedApiSecret);
+    }, []);
 
     useEffect(() => {
         const loadSymbols = async () => {
             setIsSymbolsLoading(true);
             try {
-                const { combinedSymbols, alphaTokenDetails } = await fetchExchangeInfo();
-                setSymbolsList(combinedSymbols);
-                setAlphaTokens(alphaTokenDetails);
+                const symbols = await fetchExchangeInfo();
+                setSymbolsList(symbols);
             } catch (e) {
                 console.error("Failed to fetch symbols from Binance API, using fallback list.", e);
                 setSymbolsList(FALLBACK_SYMBOLS);
@@ -89,24 +113,20 @@ const App: React.FC = () => {
     }, [t]);
 
     const fetchData = useCallback(async () => {
-        if (!symbol) return; // Don't fetch if no symbol is selected yet
-        setStrategyCache(new Map()); // Clear AI strategy cache on new data fetch
+        if (!symbol) return;
+        setStrategyCache(new Map());
         setIsLoading(true);
         setError(null);
         try {
             const finalEndDate = new Date(endDate);
             finalEndDate.setHours(23, 59, 59, 999);
 
-            const selectedSymbolData = symbolsList.find(s => s.value === symbol);
-            const isAlpha = selectedSymbolData?.isAlpha ?? false;
-
             const klineData = await fetchKlines(
                 symbol,
                 timeframe,
                 1000,
                 startDate.getTime(),
-                finalEndDate.getTime(),
-                isAlpha
+                finalEndDate.getTime()
             );
             setCandles(klineData);
             const detectedPatterns = analyzeCandles(klineData);
@@ -117,13 +137,44 @@ const App: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [symbol, timeframe, startDate, endDate, t, symbolsList]);
+    }, [symbol, timeframe, startDate, endDate, t]);
 
     useEffect(() => {
         if (!isSymbolsLoading) {
             fetchData();
         }
     }, [fetchData, isSymbolsLoading]);
+    
+    const fetchAccountData = useCallback(async () => {
+        if (!apiKey || !apiSecret || !symbol) {
+            setAccountBalances([]);
+            setOpenOrders([]);
+            setAllOrders([]);
+            setAccountError(null);
+            return;
+        }
+        setIsAccountLoading(true);
+        setAccountError(null);
+        try {
+            const [accountInfo, openOrdersData, allOrdersData] = await Promise.all([
+                getAccountInfo(apiKey, apiSecret),
+                getOpenOrders(apiKey, apiSecret, symbol).catch(() => []), // Ignore errors for orders if symbol doesn't exist
+                getAllOrders(apiKey, apiSecret, symbol).catch(() => []),
+            ]);
+            setAccountBalances(accountInfo.balances.filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0));
+            setOpenOrders(openOrdersData.sort((a,b) => b.time - a.time));
+            setAllOrders(allOrdersData.sort((a,b) => b.time - a.time));
+        } catch (err: any) {
+            setAccountError(err.message || 'Failed to fetch account data.');
+            console.error(err);
+        } finally {
+            setIsAccountLoading(false);
+        }
+    }, [apiKey, apiSecret, symbol]);
+
+    useEffect(() => {
+        fetchAccountData();
+    }, [fetchAccountData]);
 
     const filteredPatterns = useMemo(() => {
         return patterns.filter(p => selectedPatterns.has(p.name));
@@ -184,10 +235,20 @@ const App: React.FC = () => {
         setBacktestResult(result);
         setIsBacktestModalOpen(true);
     };
+    
+    const handleSaveApiKeys = (key: string, secret: string) => {
+        setApiKey(key);
+        setApiSecret(secret);
+        localStorage.setItem('binanceApiKey', key);
+        localStorage.setItem('binanceApiSecret', secret);
+        setIsApiKeyModalOpen(false);
+    };
 
-    const handleTokenSelect = (selectedSymbol: string) => {
-        setSymbol(selectedSymbol);
-        setIsTokenListModalOpen(false);
+    const handleClearApiKeys = () => {
+        setApiKey('');
+        setApiSecret('');
+        localStorage.removeItem('binanceApiKey');
+        localStorage.removeItem('binanceApiSecret');
     };
 
     return (
@@ -214,7 +275,8 @@ const App: React.FC = () => {
                         selectedPatterns={selectedPatterns}
                         setSelectedPatterns={setSelectedPatterns}
                         onRunBacktest={handleRunBacktest}
-                        onShowTokenList={() => setIsTokenListModalOpen(true)}
+                        onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
+                        onOpenDecisionMakerModal={() => setIsDecisionMakerModalOpen(true)}
                         stopLoss={stopLoss}
                         setStopLoss={setStopLoss}
                         takeProfit={takeProfit}
@@ -253,14 +315,44 @@ const App: React.FC = () => {
                             <PriceChart data={candles} patterns={filteredPatterns} hoveredPatternIndex={hoveredPatternIndex} />
                         )}
                     </div>
-                    <div className="lg:col-span-1 bg-gray-800 p-4 rounded-lg shadow-2xl border border-gray-700">
-                        <SignalList 
-                            patterns={filteredPatterns} 
-                            isLoading={isLoading || isSymbolsLoading} 
-                            setHoveredPatternIndex={setHoveredPatternIndex}
-                            onSignalClick={handleSignalClick}
-                            onShowPatternDetails={handleShowPatternDetails}
-                        />
+                    <div className="lg:col-span-1 bg-gray-800 p-4 rounded-lg shadow-2xl border border-gray-700 flex flex-col">
+                        <div className="flex border-b border-gray-700 mb-4 flex-shrink-0">
+                            <button
+                                onClick={() => setActiveTab('signals')}
+                                className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'signals' ? 'border-b-2 border-cyan-400 text-cyan-400' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                {t('signalsInfoTab')}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('account')}
+                                className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'account' ? 'border-b-2 border-cyan-400 text-cyan-400' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                {t('accountInfoTab')}
+                            </button>
+                        </div>
+                        <div className="flex-grow overflow-y-auto">
+                        {activeTab === 'signals' && (
+                            <SignalList 
+                                patterns={filteredPatterns} 
+                                isLoading={isLoading || isSymbolsLoading} 
+                                setHoveredPatternIndex={setHoveredPatternIndex}
+                                onSignalClick={handleSignalClick}
+                                onShowPatternDetails={handleShowPatternDetails}
+                            />
+                        )}
+                        {activeTab === 'account' && (
+                            <AccountInfo
+                                balances={accountBalances}
+                                openOrders={openOrders}
+                                allOrders={allOrders}
+                                isLoading={isAccountLoading}
+                                error={accountError}
+                                hasApiKeys={!!(apiKey && apiSecret)}
+                                onAddKeys={() => setIsApiKeyModalOpen(true)}
+                                onRefresh={fetchAccountData}
+                            />
+                        )}
+                        </div>
                     </div>
                 </div>
                 <StrategyModal 
@@ -269,6 +361,13 @@ const App: React.FC = () => {
                     strategy={aiStrategy}
                     isLoading={isAiLoading}
                     pattern={selectedSignalForAI}
+                />
+                <AIDecisionMakerModal
+                    isOpen={isDecisionMakerModalOpen}
+                    onClose={() => setIsDecisionMakerModalOpen(false)}
+                    candles={candles}
+                    symbol={symbol}
+                    timeframe={timeframe}
                 />
                 <BacktestModal
                     isOpen={isBacktestModalOpen}
@@ -280,13 +379,13 @@ const App: React.FC = () => {
                     onClose={() => setIsPatternDetailModalOpen(false)}
                     patternName={selectedPatternForDetail}
                 />
-                <TokenListModal
-                    isOpen={isTokenListModalOpen}
-                    onClose={() => setIsTokenListModalOpen(false)}
-                    tokens={alphaTokens}
-                    isLoading={isSymbolsLoading}
-                    symbols={symbolsList}
-                    onTokenSelect={handleTokenSelect}
+                <ApiKeyModal
+                    isOpen={isApiKeyModalOpen}
+                    onClose={() => setIsApiKeyModalOpen(false)}
+                    onSave={handleSaveApiKeys}
+                    onClear={handleClearApiKeys}
+                    currentApiKey={apiKey}
+                    currentApiSecret={apiSecret}
                 />
             </main>
              <footer className="text-center p-4 text-gray-500 text-sm mt-8">

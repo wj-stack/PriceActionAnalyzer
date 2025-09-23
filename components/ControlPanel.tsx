@@ -1,3 +1,5 @@
+
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { TIMEFRAMES, ALL_PATTERNS } from '../constants';
 import { RefreshIcon } from './icons/RefreshIcon';
@@ -5,8 +7,9 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { FilterIcon } from './icons/FilterIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { SettingsIcon } from './icons/SettingsIcon';
-import { DatabaseIcon } from './icons/DatabaseIcon';
+import { KeyIcon } from './icons/KeyIcon';
 import { PatternType, BacktestStrategy } from '../types';
+import { BrainIcon } from './icons/BrainIcon';
 
 interface ControlPanelProps {
     symbols: { value: string; label: string; baseAssetLogoUrl?: string; quoteAssetLogoUrl?: string; isAlpha?: boolean; }[];
@@ -24,7 +27,8 @@ interface ControlPanelProps {
     selectedPatterns: Set<string>;
     setSelectedPatterns: (patterns: Set<string>) => void;
     onRunBacktest: () => void;
-    onShowTokenList: () => void;
+    onOpenApiKeyModal: () => void;
+    onOpenDecisionMakerModal: () => void;
     stopLoss: number;
     setStopLoss: (value: number) => void;
     takeProfit: number;
@@ -54,15 +58,12 @@ const formatDateForInput = (date: Date): string => {
 };
 
 const CoinPairIcons: React.FC<{ baseSrc?: string; quoteSrc?: string }> = ({ baseSrc, quoteSrc }) => {
-    if (!baseSrc) {
-        return <div className="w-5 h-5 rounded-full bg-gray-600 flex-shrink-0" />; // Fallback circle
-    }
+    // As logos are removed, we always show a fallback.
+    // This component is kept for potential future re-integration with a valid logo source.
     return (
-        <div className="relative w-8 h-5 flex-shrink-0">
-            <img src={baseSrc} alt="" className="w-5 h-5 rounded-full absolute left-0 top-0 z-10" />
-            {quoteSrc && (
-                <img src={quoteSrc} alt="" className="w-5 h-5 rounded-full absolute left-3 top-0 border-2 border-gray-800" />
-            )}
+        <div className="relative w-8 h-5 flex-shrink-0 items-center justify-center flex">
+            <div className="w-5 h-5 rounded-full bg-gray-600 z-10" />
+            <div className="w-5 h-5 rounded-full bg-gray-500 absolute left-3 top-0 border-2 border-gray-800" />
         </div>
     );
 };
@@ -76,7 +77,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     endDate, setEndDate,
     selectedPatterns, setSelectedPatterns,
     onRunBacktest,
-    onShowTokenList,
+    onOpenApiKeyModal,
+    onOpenDecisionMakerModal,
     stopLoss, setStopLoss,
     takeProfit, setTakeProfit,
     backtestStrategy, setBacktestStrategy,
@@ -312,11 +314,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                             </div>
                         </div>
                         <div className="space-y-4">
-                            {Object.entries(patternsByType).map(([type, patterns]) => (
+                            {/* FIX: Refactor to use Object.keys to avoid type inference issues with Object.entries that caused a crash. */}
+                            {Object.keys(patternsByType).map(type => (
                                 <div key={type}>
-                                    <h5 onClick={() => handleToggleType(type as PatternType)} className="font-semibold text-gray-300 mb-2 cursor-pointer hover:text-white transition-colors">{t(`patternType${type}` as any)}</h5>
+                                    <h5 onClick={() => handleToggleType(type as PatternType)} className="font-semibold text-gray-300 mb-2 cursor-pointer hover:text-white transition-colors">{t(`patternType${type}`)}</h5>
                                     <ul className="space-y-1 pl-2">
-                                        {patterns.map(p => (
+                                        {patternsByType[type as PatternType].map(p => (
                                             <li key={p.name}>
                                                 <label className="flex items-center gap-2 text-gray-400 hover:text-gray-200 cursor-pointer">
                                                     <input type="checkbox" checked={selectedPatterns.has(p.name)} onChange={(e) => handleFilterChange(p.name, e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" />
@@ -435,8 +438,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
              <button onClick={onRunBacktest} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('runBacktest')}>
                 <CalculatorIcon className="w-5 h-5" />
             </button>
-             <button onClick={onShowTokenList} disabled={isLoading || isSymbolsLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('showTokenList')}>
-                <DatabaseIcon className="w-5 h-5" />
+            <button onClick={onOpenDecisionMakerModal} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('openAiAdvisor')}>
+                <BrainIcon className="w-5 h-5" />
+            </button>
+            <button onClick={onOpenApiKeyModal} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200`} aria-label="Manage API Keys">
+                <KeyIcon className="w-5 h-5" />
             </button>
             <button onClick={onRefresh} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('refreshAriaLabel')}>
                 <RefreshIcon className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
