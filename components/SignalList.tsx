@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import type { DetectedPattern } from '../types';
 import { SignalDirection, PatternType } from '../types';
@@ -40,7 +41,7 @@ const SignalItem: React.FC<SignalItemProps> = ({ pattern, t, onMouseEnter, onMou
         e.stopPropagation();
         onShowDetails();
     };
-
+    
     return (
         <div onClick={onClick} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} className={`p-3 rounded-lg border ${borderClass} ${bgClass} transition-all hover:shadow-cyan-500/20 hover:shadow-lg hover:border-cyan-500/50 cursor-pointer`}>
             <div className="flex items-start justify-between gap-2">
@@ -64,7 +65,7 @@ const SignalItem: React.FC<SignalItemProps> = ({ pattern, t, onMouseEnter, onMou
     );
 }
 
-export const SignalList: React.FC<SignalListProps> = ({ patterns, isLoading, setHoveredPatternIndex, onSignalClick, onShowPatternDetails }) => {
+const SignalListComponent: React.FC<SignalListProps> = ({ patterns, isLoading, setHoveredPatternIndex, onSignalClick, onShowPatternDetails }) => {
     const { t } = useLanguage();
     const sortedPatterns = [...patterns].sort((a, b) => b.candle.time - a.candle.time);
 
@@ -93,3 +94,5 @@ export const SignalList: React.FC<SignalListProps> = ({ patterns, isLoading, set
         </div>
     );
 };
+
+export const SignalList = React.memo(SignalListComponent);

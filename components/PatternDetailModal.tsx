@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { InfoIcon } from './icons/InfoIcon';
@@ -10,7 +11,7 @@ interface PatternDetailModalProps {
     patternName: string | null;
 }
 
-export const PatternDetailModal: React.FC<PatternDetailModalProps> = ({ isOpen, onClose, patternName }) => {
+const PatternDetailModalComponent: React.FC<PatternDetailModalProps> = ({ isOpen, onClose, patternName }) => {
     const { t } = useLanguage();
     if (!isOpen || !patternName) return null;
 
@@ -47,3 +48,5 @@ export const PatternDetailModal: React.FC<PatternDetailModalProps> = ({ isOpen, 
         </div>
     );
 };
+
+export const PatternDetailModal = React.memo(PatternDetailModalComponent);

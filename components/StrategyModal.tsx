@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { DetectedPattern } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -31,7 +32,7 @@ interface StrategyModalProps {
     pattern: DetectedPattern | null;
 }
 
-export const StrategyModal: React.FC<StrategyModalProps> = ({ isOpen, onClose, strategy, isLoading, pattern }) => {
+const StrategyModalComponent: React.FC<StrategyModalProps> = ({ isOpen, onClose, strategy, isLoading, pattern }) => {
     const { t } = useLanguage();
     if (!isOpen) return null;
 
@@ -68,3 +69,5 @@ export const StrategyModal: React.FC<StrategyModalProps> = ({ isOpen, onClose, s
         </div>
     );
 };
+
+export const StrategyModal = React.memo(StrategyModalComponent);

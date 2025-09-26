@@ -1,5 +1,7 @@
 
 
+
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { TIMEFRAMES, ALL_PATTERNS } from '../constants';
 import { RefreshIcon } from './icons/RefreshIcon';
@@ -7,9 +9,10 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { FilterIcon } from './icons/FilterIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { SettingsIcon } from './icons/SettingsIcon';
-import { KeyIcon } from './icons/KeyIcon';
-import { PatternType, BacktestStrategy } from '../types';
+import { PatternType, BacktestStrategy, PriceAlert } from '../types';
 import { BrainIcon } from './icons/BrainIcon';
+import { AlertIcon } from './icons/AlertIcon';
+import { CloseIcon } from './icons/CloseIcon';
 
 interface ControlPanelProps {
     symbols: { value: string; label: string; baseAssetLogoUrl?: string; quoteAssetLogoUrl?: string; isAlpha?: boolean; }[];
@@ -27,12 +30,13 @@ interface ControlPanelProps {
     selectedPatterns: Set<string>;
     setSelectedPatterns: (patterns: Set<string>) => void;
     onRunBacktest: () => void;
-    onOpenApiKeyModal: () => void;
     onOpenDecisionMakerModal: () => void;
     stopLoss: number;
     setStopLoss: (value: number) => void;
     takeProfit: number;
     setTakeProfit: (value: number) => void;
+    leverage: number;
+    setLeverage: (value: number) => void;
     backtestStrategy: BacktestStrategy;
     setBacktestStrategy: (strategy: BacktestStrategy) => void;
     rsiPeriod: number;
@@ -51,6 +55,9 @@ interface ControlPanelProps {
     setVolumeMaPeriod: (value: number) => void;
     volumeThreshold: number;
     setVolumeThreshold: (value: number) => void;
+    alerts: Record<string, PriceAlert[]>;
+    addAlert: (symbol: string, price: number) => void;
+    removeAlert: (symbol: string, id: string) => void;
 }
 
 const formatDateForInput = (date: Date): string => {
@@ -68,7 +75,7 @@ const CoinPairIcons: React.FC<{ baseSrc?: string; quoteSrc?: string }> = ({ base
     );
 };
 
-export const ControlPanel: React.FC<ControlPanelProps> = ({ 
+const ControlPanelComponent: React.FC<ControlPanelProps> = ({ 
     symbols, isSymbolsLoading,
     symbol, setSymbol, 
     timeframe, setTimeframe, 
@@ -77,10 +84,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     endDate, setEndDate,
     selectedPatterns, setSelectedPatterns,
     onRunBacktest,
-    onOpenApiKeyModal,
     onOpenDecisionMakerModal,
     stopLoss, setStopLoss,
     takeProfit, setTakeProfit,
+    leverage, setLeverage,
     backtestStrategy, setBacktestStrategy,
     rsiPeriod, setRsiPeriod,
     rsiOversold, setRsiOversold,
@@ -90,19 +97,27 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     useVolumeFilter, setUseVolumeFilter,
     volumeMaPeriod, setVolumeMaPeriod,
     volumeThreshold, setVolumeThreshold,
+    alerts, addAlert, removeAlert
 }) => {
     const { locale, setLocale, t } = useLanguage();
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isAlertPopoverOpen, setIsAlertPopoverOpen] = useState(false);
+    const [newAlertPrice, setNewAlertPrice] = useState('');
     const [isSymbolDropdownOpen, setIsSymbolDropdownOpen] = useState(false);
     const [symbolSearch, setSymbolSearch] = useState('');
     const [visibleSymbolCount, setVisibleSymbolCount] = useState(50);
 
     const filterMenuRef = useRef<HTMLDivElement>(null);
     const settingsMenuRef = useRef<HTMLDivElement>(null);
+    const alertPopoverRef = useRef<HTMLDivElement>(null);
     const symbolDropdownRef = useRef<HTMLDivElement>(null);
     const symbolListRef = useRef<HTMLUListElement>(null);
     
+    const isDateRangeValid = useMemo(() => {
+        return endDate.getTime() > startDate.getTime();
+    }, [startDate, endDate]);
+
     const baseSelectorClasses = "bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all duration-200 text-sm";
     const disabledClasses = "disabled:opacity-50 disabled:cursor-not-allowed";
 
@@ -117,6 +132,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             if (symbolDropdownRef.current && !symbolDropdownRef.current.contains(event.target as Node)) {
                 setIsSymbolDropdownOpen(false);
                 setSymbolSearch('');
+            }
+            if (alertPopoverRef.current && !alertPopoverRef.current.contains(event.target as Node)) {
+                setIsAlertPopoverOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -207,6 +225,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     };
 
     const selectedSymbolData = useMemo(() => symbols.find(s => s.value === symbol), [symbols, symbol]);
+    
+    const handleAddAlert = () => {
+        const price = parseFloat(newAlertPrice);
+        if (!isNaN(price) && price > 0) {
+            addAlert(symbol, price);
+            setNewAlertPrice('');
+        }
+    };
+
+    const currentAlerts = alerts[symbol] || [];
 
 
     return (
@@ -339,7 +367,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     <SettingsIcon className="w-5 h-5" />
                 </button>
                 {isSettingsOpen && (
-                    <div className="absolute right-0 mt-2 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl z-30 p-4 text-sm">
+                    <div className="absolute right-0 mt-2 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl z-30 p-4 text-sm max-h-[80vh] overflow-y-auto">
                         <h4 className="font-bold text-base text-cyan-400 mb-3">{t('backtestSettings')}</h4>
                         <div className="space-y-3">
                             <div>
@@ -409,6 +437,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
                             <hr className="border-gray-600" />
                             <div>
+                                <label htmlFor="leverage" className="block text-gray-300 mb-1">{t('leverage')} (x)</label>
+                                <input 
+                                    type="number" 
+                                    id="leverage" 
+                                    value={leverage} 
+                                    onChange={(e) => setLeverage(parseFloat(e.target.value) || 1)}
+                                    min="1" max="125"
+                                    className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1 focus:ring-cyan-500 focus:border-cyan-500"
+                                />
+                            </div>
+                            <div>
                                 <label htmlFor="stop-loss" className="block text-gray-300 mb-1">{t('stopLoss')} (%)</label>
                                 <input 
                                     type="number" 
@@ -435,18 +474,60 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     </div>
                 )}
             </div>
-             <button onClick={onRunBacktest} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('runBacktest')}>
+            <div className="relative" ref={alertPopoverRef}>
+                <button 
+                    onClick={() => setIsAlertPopoverOpen(!isAlertPopoverOpen)} 
+                    disabled={isLoading} 
+                    className={`relative p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} 
+                    aria-label={t('setPriceAlert')}
+                >
+                    <AlertIcon className="w-5 h-5" />
+                    {currentAlerts.length > 0 && (
+                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-cyan-500 text-xs font-bold text-white ring-2 ring-gray-800">
+                            {currentAlerts.length}
+                        </span>
+                    )}
+                </button>
+                {isAlertPopoverOpen && (
+                    <div className="absolute right-0 mt-2 w-72 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl z-30 p-4 text-sm">
+                        <h4 className="font-bold text-base text-cyan-400 mb-3">{t('setPriceAlertFor').replace('{{symbol}}', symbol)}</h4>
+                        <div className="flex gap-2 mb-4">
+                            <input
+                                type="number"
+                                value={newAlertPrice}
+                                onChange={e => setNewAlertPrice(e.target.value)}
+                                placeholder={t('targetPrice')}
+                                className="flex-grow bg-gray-900 border border-gray-600 rounded-md px-2 py-1.5 focus:ring-cyan-500 focus:border-cyan-500"
+                            />
+                            <button onClick={handleAddAlert} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-md transition-colors">{t('add')}</button>
+                        </div>
+                        <h5 className="text-xs uppercase text-gray-400 font-semibold mb-2">{t('activeAlerts')}</h5>
+                        <ul className="space-y-2 max-h-40 overflow-y-auto">
+                            {currentAlerts.length > 0 ? currentAlerts.map(alert => (
+                                <li key={alert.id} className="flex justify-between items-center bg-gray-700/50 p-2 rounded-md">
+                                    <span className="font-mono text-gray-200">${alert.price.toLocaleString()}</span>
+                                    <button onClick={() => removeAlert(symbol, alert.id)} className="text-gray-500 hover:text-red-400" aria-label={t('removeAlert')}>
+                                        <CloseIcon className="w-4 h-4" />
+                                    </button>
+                                </li>
+                            )) : (
+                                <p className="text-gray-500 text-center py-4">{t('noActiveAlerts')}</p>
+                            )}
+                        </ul>
+                    </div>
+                )}
+            </div>
+             <button onClick={onRunBacktest} disabled={isLoading || !isDateRangeValid} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('runBacktest')}>
                 <CalculatorIcon className="w-5 h-5" />
             </button>
-            <button onClick={onOpenDecisionMakerModal} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('openAiAdvisor')}>
+            <button onClick={onOpenDecisionMakerModal} disabled={isLoading || !isDateRangeValid} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('openAiAdvisor')}>
                 <BrainIcon className="w-5 h-5" />
             </button>
-            <button onClick={onOpenApiKeyModal} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200`} aria-label="Manage API Keys">
-                <KeyIcon className="w-5 h-5" />
-            </button>
-            <button onClick={onRefresh} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('refreshAriaLabel')}>
+            <button onClick={onRefresh} disabled={isLoading || !isDateRangeValid} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('refreshAriaLabel')}>
                 <RefreshIcon className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
         </div>
     );
 };
+
+export const ControlPanel = React.memo(ControlPanelComponent);

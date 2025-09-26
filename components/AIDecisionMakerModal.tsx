@@ -1,3 +1,5 @@
+
+
 import React, { useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getTradingDecision } from '../services/aiService';
@@ -92,7 +94,7 @@ const DecisionDisplay: React.FC<{ result: AIDecision, t: (key: string) => string
 
 const FUTURES_TIMEFRAMES = ['5m', '15m', '30m', '1h'];
 
-export const AIDecisionMakerModal: React.FC<AIDecisionMakerModalProps> = ({ isOpen, onClose, candles, symbol, timeframe }) => {
+const AIDecisionMakerModalComponent: React.FC<AIDecisionMakerModalProps> = ({ isOpen, onClose, candles, symbol, timeframe }) => {
     const { t, locale } = useLanguage();
     const [marketType, setMarketType] = useState<MarketType>('SPOT');
     const [riskAppetite, setRiskAppetite] = useState<RiskAppetite>('MEDIUM');
@@ -262,3 +264,5 @@ export const AIDecisionMakerModal: React.FC<AIDecisionMakerModalProps> = ({ isOp
         </div>
     );
 };
+
+export const AIDecisionMakerModal = React.memo(AIDecisionMakerModalComponent);

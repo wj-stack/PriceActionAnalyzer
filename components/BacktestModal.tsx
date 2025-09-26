@@ -1,4 +1,6 @@
 
+
+
 import React from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { BacktestResult, TradeLogEvent } from '../services/backtestService';
@@ -75,6 +77,24 @@ const LogEntry: React.FC<{ entry: TradeLogEvent }> = ({ entry }) => {
                     </span>
                 );
             }
+            case 'UPDATE_PNL': {
+                const isProfit = entry.unrealizedPnl >= 0;
+                const pnlColor = isProfit ? 'text-green-400' : 'text-red-400';
+                let message = t('log_update_pnl')
+                    .replace('{{price}}', entry.price.toFixed(4))
+                    .replace('{{equity}}', formatCurrency(entry.equity));
+
+                const pnlText = formatCurrency(entry.unrealizedPnl, true);
+                const messageParts = message.split('{{pnl}}');
+
+                return (
+                     <span className="text-gray-400">
+                        {messageParts[0]}
+                        <span className={`font-semibold ${pnlColor}`}>{pnlText}</span>
+                        {messageParts[1]}
+                    </span>
+                );
+            }
             case 'FINISH':
                  return <span className="text-gray-500">{t('log_finish')}</span>;
             default:
@@ -91,11 +111,11 @@ const LogEntry: React.FC<{ entry: TradeLogEvent }> = ({ entry }) => {
 };
 
 
-export const BacktestModal: React.FC<BacktestModalProps> = ({ isOpen, onClose, result }) => {
+const BacktestModalComponent: React.FC<BacktestModalProps> = ({ isOpen, onClose, result }) => {
     const { t } = useLanguage();
     if (!isOpen || !result) return null;
 
-    const { pnl, pnlPercentage, totalTrades, winRate, equityCurve, settings } = result;
+    const { pnl, pnlPercentage, totalTrades, winRate, maxDrawdown, profitFactor, avgTradeDurationBars, equityCurve, settings } = result;
     const isProfit = pnl >= 0;
     const pnlColor = isProfit ? 'text-green-400' : 'text-red-400';
     const chartColor = isProfit ? '#10B981' : '#EF4444';
@@ -119,13 +139,17 @@ export const BacktestModal: React.FC<BacktestModalProps> = ({ isOpen, onClose, r
 
                 <main className="p-6 flex flex-col gap-6 overflow-y-auto">
                     {/* Top Row: Summary & Settings */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                         <StatCard small label={t('initialCapital')} value={`$${settings.initialCapital.toLocaleString()}`} />
                         <StatCard small label={t('finalCapital')} value={`$${result.finalCapital.toFixed(2)}`} />
                         <StatCard small label={t('netProfit')} value={`${isProfit ? '+' : ''}$${pnl.toFixed(2)}`} valueColor={pnlColor} />
                         <StatCard small label={t('pnl')} value={`${isProfit ? '+' : ''}${pnlPercentage.toFixed(2)}%`} valueColor={pnlColor} />
+                        <StatCard small label={t('maxDrawdown')} value={`${(maxDrawdown * 100).toFixed(2)}%`} valueColor="text-red-400" />
                         <StatCard small label={t('totalTrades')} value={totalTrades.toString()} />
                         <StatCard small label={t('winRate')} value={`${winRate.toFixed(2)}%`} />
+                        <StatCard small label={t('profitFactor')} value={isFinite(profitFactor) ? profitFactor.toFixed(2) : '∞'} />
+                        <StatCard small label={t('avgTradeDuration')} value={`${avgTradeDurationBars.toFixed(1)} bars`} />
+                        <StatCard small label={t('leverage')} value={`${settings.leverage}x`} />
                         <StatCard small label={t('backtestStrategy')} value={t(strategyKeyMap[settings.strategy])} />
 
                         {settings.strategy === 'RSI_FILTER' && (
@@ -209,3 +233,5 @@ export const BacktestModal: React.FC<BacktestModalProps> = ({ isOpen, onClose, r
         </div>
     );
 };
+
+export const BacktestModal = React.memo(BacktestModalComponent);

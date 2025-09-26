@@ -1,24 +1,25 @@
 
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PriceChart } from './components/PriceChart';
 import { SignalList } from './components/SignalList';
 import { StrategyModal } from './components/StrategyModal';
 import { BacktestModal } from './components/BacktestModal';
 import { PatternDetailModal } from './components/PatternDetailModal';
-import { ApiKeyModal } from './components/ApiKeyModal';
-import { AccountInfo } from './components/AccountInfo';
 import { AIDecisionMakerModal } from './components/AIDecisionMakerModal';
-import { fetchKlines, fetchExchangeInfo } from './services/binanceService';
-import { getAccountInfo, getOpenOrders, getAllOrders } from './services/binanceAuthenticatedService';
+import { ToastContainer } from './components/toast/ToastContainer';
+import { fetchKlines, fetchExchangeInfo, subscribeToKlineStream } from './services/binanceService';
 import { analyzeCandles } from './services/patternRecognizer';
 import { getTradingStrategy } from './services/aiService';
 import { runBacktest, BacktestResult } from './services/backtestService';
-import type { Candle, DetectedPattern, BacktestStrategy, AccountBalance, Order } from './types';
+import type { Candle, DetectedPattern, BacktestStrategy, PriceAlert } from './types';
 import { FALLBACK_SYMBOLS, ALL_PATTERNS, BACKTEST_INITIAL_CAPITAL, BACKTEST_COMMISSION_RATE } from './constants';
 import { LogoIcon } from './components/icons/LogoIcon';
 import { useLanguage } from './contexts/LanguageContext';
+import { useToast } from './contexts/ToastContext';
 
 const App: React.FC = () => {
     const [symbolsList, setSymbolsList] = useState<{ value: string; label: string; baseAssetLogoUrl?: string; quoteAssetLogoUrl?: string; isAlpha?: boolean; }[]>([]);
@@ -30,6 +31,7 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
     const { t, locale } = useLanguage();
+    const { addToast } = useToast();
 
     const [endDate, setEndDate] = useState(() => new Date());
     const [startDate, setStartDate] = useState(() => {
@@ -63,6 +65,7 @@ const App: React.FC = () => {
     const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
     const [stopLoss, setStopLoss] = useState<number>(2);
     const [takeProfit, setTakeProfit] = useState<number>(4);
+    const [leverage, setLeverage] = useState<number>(1);
     const [backtestStrategy, setBacktestStrategy] = useState<BacktestStrategy>('SIGNAL_ONLY');
     const [rsiPeriod, setRsiPeriod] = useState<number>(14);
     const [rsiOversold, setRsiOversold] = useState<number>(30);
@@ -72,29 +75,16 @@ const App: React.FC = () => {
     const [useVolumeFilter, setUseVolumeFilter] = useState<boolean>(false);
     const [volumeMaPeriod, setVolumeMaPeriod] = useState<number>(20);
     const [volumeThreshold, setVolumeThreshold] = useState<number>(1.5);
+
+    // Price Alert State
+    const [alerts, setAlerts] = useState<Record<string, PriceAlert[]>>({});
+
+    // WebSocket and Data Caching Refs
+    const wsCleanupRef = useRef<(() => void) | null>(null);
+    const klineCacheRef = useRef<Map<string, Candle[]>>(new Map());
+    const [refreshCount, setRefreshCount] = useState(0);
+
     
-    // API Key State
-    const [apiKey, setApiKey] = useState<string>('');
-    const [apiSecret, setApiSecret] = useState<string>('');
-    const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
-
-    // Account Info State
-    const [accountBalances, setAccountBalances] = useState<AccountBalance[]>([]);
-    const [openOrders, setOpenOrders] = useState<Order[]>([]);
-    const [allOrders, setAllOrders] = useState<Order[]>([]);
-    const [isAccountLoading, setIsAccountLoading] = useState<boolean>(false);
-    const [accountError, setAccountError] = useState<string | null>(null);
-
-    // UI State
-    const [activeTab, setActiveTab] = useState<'signals' | 'account'>('signals');
-
-    useEffect(() => {
-        const storedApiKey = localStorage.getItem('binanceApiKey');
-        const storedApiSecret = localStorage.getItem('binanceApiSecret');
-        if (storedApiKey) setApiKey(storedApiKey);
-        if (storedApiSecret) setApiSecret(storedApiSecret);
-    }, []);
-
     useEffect(() => {
         const loadSymbols = async () => {
             setIsSymbolsLoading(true);
@@ -112,75 +102,148 @@ const App: React.FC = () => {
         loadSymbols();
     }, [t]);
 
-    const fetchData = useCallback(async () => {
-        if (!symbol) return;
-        setStrategyCache(new Map());
-        setIsLoading(true);
-        setError(null);
-        try {
-            const finalEndDate = new Date(endDate);
-            finalEndDate.setHours(23, 59, 59, 999);
-
-            const klineData = await fetchKlines(
-                symbol,
-                timeframe,
-                1000,
-                startDate.getTime(),
-                finalEndDate.getTime()
-            );
-            setCandles(klineData);
-            const detectedPatterns = analyzeCandles(klineData);
+    const performAnalysis = useCallback((candlesToAnalyze: Candle[]) => {
+        if (candlesToAnalyze.length > 0) {
+            const detectedPatterns = analyzeCandles(candlesToAnalyze);
             setPatterns(detectedPatterns);
-        } catch (err) {
-            setError(t('fetchError'));
-            console.error(err);
-        } finally {
+        }
+    }, []);
+
+    const handleWsUpdate = useCallback((newCandle: Candle) => {
+        setCandles(prevCandles => {
+            const lastCandle = prevCandles.length > 0 ? prevCandles[prevCandles.length - 1] : null;
+            let updatedCandles;
+
+            if (lastCandle && newCandle.time === lastCandle.time) {
+                updatedCandles = [...prevCandles.slice(0, -1), newCandle];
+                if (newCandle.isClosed && !lastCandle.isClosed) {
+                    performAnalysis(updatedCandles);
+                }
+                return updatedCandles;
+            } else if (!lastCandle || newCandle.time > lastCandle.time) {
+                updatedCandles = [...prevCandles, newCandle];
+                return updatedCandles;
+            }
+            
+            return prevCandles;
+        });
+    }, [performAnalysis]);
+
+    // Main data fetching and WebSocket subscription effect
+    useEffect(() => {
+        if (isSymbolsLoading || !symbol) return;
+
+        // Date range validation
+        if (endDate.getTime() <= startDate.getTime()) {
+            setError(t('dateRangeError'));
+            setCandles([]);
+            setPatterns([]);
             setIsLoading(false);
+            wsCleanupRef.current?.();
+            wsCleanupRef.current = null;
+            return; // Abort fetch
         }
-    }, [symbol, timeframe, startDate, endDate, t]);
 
-    useEffect(() => {
-        if (!isSymbolsLoading) {
-            fetchData();
-        }
-    }, [fetchData, isSymbolsLoading]);
+        wsCleanupRef.current?.();
+        wsCleanupRef.current = null;
+
+        const loadDataAndSubscribe = async () => {
+            setIsLoading(true);
+            setError(null);
+            setStrategyCache(new Map());
+            
+            try {
+                const cacheKey = `${symbol}-${timeframe}`;
+                let historicalCandles: Candle[] = [];
+
+                if (klineCacheRef.current.has(cacheKey) && refreshCount === 0) {
+                    historicalCandles = klineCacheRef.current.get(cacheKey)!;
+                } else {
+                    const finalEndDate = new Date(endDate);
+                    finalEndDate.setHours(23, 59, 59, 999);
+                    historicalCandles = await fetchKlines(
+                        symbol,
+                        timeframe,
+                        2000, 
+                        startDate.getTime(),
+                        finalEndDate.getTime()
+                    );
+                    klineCacheRef.current.set(cacheKey, historicalCandles);
+                }
+
+                setCandles(historicalCandles);
+                performAnalysis(historicalCandles);
+
+                wsCleanupRef.current = subscribeToKlineStream(symbol, timeframe, handleWsUpdate);
+
+            } catch (err) {
+                setError(t('fetchError'));
+                console.error(err);
+                setCandles([]);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadDataAndSubscribe();
+
+        return () => {
+            wsCleanupRef.current?.();
+        };
+
+    }, [symbol, timeframe, startDate, endDate, t, isSymbolsLoading, refreshCount, handleWsUpdate, performAnalysis]);
     
-    const fetchAccountData = useCallback(async () => {
-        if (!apiKey || !apiSecret || !symbol) {
-            setAccountBalances([]);
-            setOpenOrders([]);
-            setAllOrders([]);
-            setAccountError(null);
-            return;
-        }
-        setIsAccountLoading(true);
-        setAccountError(null);
-        try {
-            const [accountInfo, openOrdersData, allOrdersData] = await Promise.all([
-                getAccountInfo(apiKey, apiSecret),
-                getOpenOrders(apiKey, apiSecret, symbol).catch(() => []), // Ignore errors for orders if symbol doesn't exist
-                getAllOrders(apiKey, apiSecret, symbol).catch(() => []),
-            ]);
-            setAccountBalances(accountInfo.balances.filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0));
-            setOpenOrders(openOrdersData.sort((a,b) => b.time - a.time));
-            setAllOrders(allOrdersData.sort((a,b) => b.time - a.time));
-        } catch (err: any) {
-            setAccountError(err.message || 'Failed to fetch account data.');
-            console.error(err);
-        } finally {
-            setIsAccountLoading(false);
-        }
-    }, [apiKey, apiSecret, symbol]);
 
-    useEffect(() => {
-        fetchAccountData();
-    }, [fetchAccountData]);
-
-    const filteredPatterns = useMemo(() => {
+    const displayedCandles = candles;
+    const displayedPatterns = useMemo(() => {
         return patterns.filter(p => selectedPatterns.has(p.name));
     }, [patterns, selectedPatterns]);
 
-    const handleSignalClick = async (pattern: DetectedPattern) => {
+
+    const addAlert = useCallback((symbol: string, price: number) => {
+        const newAlert: PriceAlert = { id: `alert-${Date.now()}`, price };
+        setAlerts(prev => ({
+            ...prev,
+            [symbol]: [...(prev[symbol] || []), newAlert]
+        }));
+    }, []);
+
+    const removeAlert = useCallback((symbol: string, id: string) => {
+        setAlerts(prev => {
+            const symbolAlerts = (prev[symbol] || []).filter(alert => alert.id !== id);
+            if (symbolAlerts.length === 0) {
+                const newAlerts = { ...prev };
+                delete newAlerts[symbol];
+                return newAlerts;
+            }
+            return {
+                ...prev,
+                [symbol]: symbolAlerts
+            };
+        });
+    }, []);
+
+    // Effect to check for triggered price alerts
+    useEffect(() => {
+        if (candles.length === 0 || !symbol) return;
+        const lastCandle = candles[candles.length - 1];
+        const activeAlerts = alerts[symbol] || [];
+        
+        activeAlerts.forEach(alert => {
+            if (
+                (lastCandle.low <= alert.price && lastCandle.high >= alert.price) ||
+                (lastCandle.close >= alert.price && lastCandle.open <= alert.price) ||
+                (lastCandle.close <= alert.price && lastCandle.open >= alert.price)
+            ) {
+                addToast(t('alertTriggeredMessage').replace('{{symbol}}', symbol).replace('{{price}}', alert.price.toString()));
+                removeAlert(symbol, alert.id);
+            }
+        });
+
+    }, [candles, symbol, alerts, addToast, removeAlert, t]);
+
+
+    const handleSignalClick = useCallback(async (pattern: DetectedPattern) => {
         setSelectedSignalForAI(pattern);
         setIsModalOpen(true);
         
@@ -203,23 +266,24 @@ const App: React.FC = () => {
         } finally {
             setIsAiLoading(false);
         }
-    };
+    }, [symbol, timeframe, locale, strategyCache, candles, t]);
 
-    const handleShowPatternDetails = (patternName: string) => {
+    const handleShowPatternDetails = useCallback((patternName: string) => {
         setSelectedPatternForDetail(patternName);
         setIsPatternDetailModalOpen(true);
-    };
+    }, []);
 
-    const handleRunBacktest = () => {
+    const handleRunBacktest = useCallback(() => {
         if (candles.length === 0) return;
         const result = runBacktest(
             candles,
-            filteredPatterns,
+            displayedPatterns,
             {
                 initialCapital: BACKTEST_INITIAL_CAPITAL,
                 commissionRate: BACKTEST_COMMISSION_RATE,
                 stopLoss: stopLoss,
                 takeProfit: takeProfit,
+                leverage: leverage,
                 strategy: backtestStrategy,
                 rsiPeriod,
                 rsiOversold,
@@ -234,25 +298,14 @@ const App: React.FC = () => {
         );
         setBacktestResult(result);
         setIsBacktestModalOpen(true);
-    };
-    
-    const handleSaveApiKeys = (key: string, secret: string) => {
-        setApiKey(key);
-        setApiSecret(secret);
-        localStorage.setItem('binanceApiKey', key);
-        localStorage.setItem('binanceApiSecret', secret);
-        setIsApiKeyModalOpen(false);
-    };
+    }, [candles, displayedPatterns, stopLoss, takeProfit, leverage, backtestStrategy, rsiPeriod, rsiOversold, rsiOverbought, bbPeriod, bbStdDev, useVolumeFilter, volumeMaPeriod, volumeThreshold, t]);
 
-    const handleClearApiKeys = () => {
-        setApiKey('');
-        setApiSecret('');
-        localStorage.removeItem('binanceApiKey');
-        localStorage.removeItem('binanceApiSecret');
-    };
+    const onRefresh = useCallback(() => setRefreshCount(c => c + 1), []);
+    const onOpenDecisionMakerModal = useCallback(() => setIsDecisionMakerModalOpen(true), []);
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
+            <ToastContainer />
             <header className="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700 p-4 sticky top-0 z-20">
                 <div className="container mx-auto flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -267,7 +320,7 @@ const App: React.FC = () => {
                         timeframe={timeframe}
                         setTimeframe={setTimeframe}
                         isLoading={isLoading}
-                        onRefresh={fetchData}
+                        onRefresh={onRefresh}
                         startDate={startDate}
                         setStartDate={setStartDate}
                         endDate={endDate}
@@ -275,12 +328,13 @@ const App: React.FC = () => {
                         selectedPatterns={selectedPatterns}
                         setSelectedPatterns={setSelectedPatterns}
                         onRunBacktest={handleRunBacktest}
-                        onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
-                        onOpenDecisionMakerModal={() => setIsDecisionMakerModalOpen(true)}
+                        onOpenDecisionMakerModal={onOpenDecisionMakerModal}
                         stopLoss={stopLoss}
                         setStopLoss={setStopLoss}
                         takeProfit={takeProfit}
                         setTakeProfit={setTakeProfit}
+                        leverage={leverage}
+                        setLeverage={setLeverage}
                         backtestStrategy={backtestStrategy}
                         setBacktestStrategy={setBacktestStrategy}
                         rsiPeriod={rsiPeriod}
@@ -299,6 +353,9 @@ const App: React.FC = () => {
                         setVolumeMaPeriod={setVolumeMaPeriod}
                         volumeThreshold={volumeThreshold}
                         setVolumeThreshold={setVolumeThreshold}
+                        alerts={alerts}
+                        addAlert={addAlert}
+                        removeAlert={removeAlert}
                     />
                 </div>
             </header>
@@ -307,54 +364,29 @@ const App: React.FC = () => {
                 {error && <div className="bg-red-500/20 border border-red-500 text-red-300 p-4 rounded-md mb-4">{error}</div>}
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                     <div className="lg:col-span-3 bg-gray-800 p-4 rounded-lg shadow-2xl border border-gray-700">
-                        {isLoading || isSymbolsLoading ? (
+                        {isLoading && candles.length === 0 ? (
                              <div className="flex items-center justify-center h-[600px]">
                                  <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-cyan-500"></div>
                              </div>
                         ) : (
-                            <PriceChart data={candles} patterns={filteredPatterns} hoveredPatternIndex={hoveredPatternIndex} />
+                            <PriceChart 
+                                data={displayedCandles} 
+                                patterns={displayedPatterns} 
+                                hoveredPatternIndex={hoveredPatternIndex}
+                            />
                         )}
                     </div>
-                    <div className="lg:col-span-1 bg-gray-800 p-4 rounded-lg shadow-2xl border border-gray-700 flex flex-col">
-                        <div className="flex border-b border-gray-700 mb-4 flex-shrink-0">
-                            <button
-                                onClick={() => setActiveTab('signals')}
-                                className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'signals' ? 'border-b-2 border-cyan-400 text-cyan-400' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                {t('signalsInfoTab')}
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('account')}
-                                className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'account' ? 'border-b-2 border-cyan-400 text-cyan-400' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                {t('accountInfoTab')}
-                            </button>
-                        </div>
-                        <div className="flex-grow overflow-y-auto">
-                        {activeTab === 'signals' && (
-                            <SignalList 
-                                patterns={filteredPatterns} 
-                                isLoading={isLoading || isSymbolsLoading} 
-                                setHoveredPatternIndex={setHoveredPatternIndex}
-                                onSignalClick={handleSignalClick}
-                                onShowPatternDetails={handleShowPatternDetails}
-                            />
-                        )}
-                        {activeTab === 'account' && (
-                            <AccountInfo
-                                balances={accountBalances}
-                                openOrders={openOrders}
-                                allOrders={allOrders}
-                                isLoading={isAccountLoading}
-                                error={accountError}
-                                hasApiKeys={!!(apiKey && apiSecret)}
-                                onAddKeys={() => setIsApiKeyModalOpen(true)}
-                                onRefresh={fetchAccountData}
-                            />
-                        )}
-                        </div>
+                    <div className="lg:col-span-1 bg-gray-800 p-4 rounded-lg shadow-2xl border border-gray-700">
+                        <SignalList 
+                            patterns={displayedPatterns} 
+                            isLoading={isLoading && candles.length === 0} 
+                            setHoveredPatternIndex={setHoveredPatternIndex}
+                            onSignalClick={handleSignalClick}
+                            onShowPatternDetails={handleShowPatternDetails}
+                        />
                     </div>
                 </div>
+
                 <StrategyModal 
                     isOpen={isModalOpen}
                     onClose={() => setIsModalOpen(false)}
@@ -378,14 +410,6 @@ const App: React.FC = () => {
                     isOpen={isPatternDetailModalOpen}
                     onClose={() => setIsPatternDetailModalOpen(false)}
                     patternName={selectedPatternForDetail}
-                />
-                <ApiKeyModal
-                    isOpen={isApiKeyModalOpen}
-                    onClose={() => setIsApiKeyModalOpen(false)}
-                    onSave={handleSaveApiKeys}
-                    onClear={handleClearApiKeys}
-                    currentApiKey={apiKey}
-                    currentApiSecret={apiSecret}
                 />
             </main>
              <footer className="text-center p-4 text-gray-500 text-sm mt-8">

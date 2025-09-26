@@ -1,5 +1,6 @@
 
 
+
 export type BinanceKline = [
   number, // Kline open time
   string, // Open price
@@ -23,6 +24,7 @@ export interface Candle {
   close: number;
   volume: number;
   isBullish: boolean;
+  isClosed: boolean;
 }
 
 export enum PatternType {
@@ -53,6 +55,7 @@ export interface BacktestSettings {
     stopLoss: number;
     takeProfit: number;
     strategy: BacktestStrategy;
+    leverage: number;
     rsiPeriod?: number;
     rsiOversold?: number;
     rsiOverbought?: number;
@@ -73,36 +76,6 @@ export interface AlphaToken {
   contractAddress: string | null;
 }
 
-export interface AccountBalance {
-  asset: string;
-  free: string;
-  locked: string;
-}
-
-export interface AccountInfo {
-  balances: AccountBalance[];
-}
-
-export interface Order {
-  symbol: string;
-  orderId: number;
-  clientOrderId: string;
-  price: string;
-  origQty: string;
-  executedQty: string;
-  cummulativeQuoteQty: string;
-  status: 'NEW' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED' | 'PENDING_CANCEL' | 'REJECTED' | 'EXPIRED';
-  timeInForce: 'GTC' | 'IOC' | 'FOK';
-  type: 'LIMIT' | 'MARKET' | 'STOP_LOSS' | 'STOP_LOSS_LIMIT' | 'TAKE_PROFIT' | 'TAKE_PROFIT_LIMIT' | 'LIMIT_MAKER';
-  side: 'BUY' | 'SELL';
-  stopPrice: string;
-  icebergQty: string;
-  time: number;
-  updateTime: number;
-  isWorking: boolean;
-  origQuoteOrderQty: string;
-}
-
 export interface MultiTimeframeData {
     timeframe: string;
     candles: Candle[];
@@ -121,4 +94,67 @@ export interface AIDecision {
     takeProfitLevels: number[];
     confidenceScore: number;
     riskWarning: string;
+}
+
+// FIX: Add missing types for authenticated Binance API responses.
+export interface AccountBalance {
+  asset: string;
+  free: string;
+  locked: string;
+}
+
+export interface AccountInfo {
+  makerCommission: number;
+  takerCommission: number;
+  buyerCommission: number;
+  sellerCommission: number;
+  canTrade: boolean;
+  canWithdraw: boolean;
+  canDeposit: boolean;
+  updateTime: number;
+  accountType: string;
+  balances: AccountBalance[];
+  permissions: string[];
+}
+
+export type OrderStatus = 'NEW' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED' | 'PENDING_CANCEL' | 'REJECTED' | 'EXPIRED';
+export type OrderSide = 'BUY' | 'SELL';
+export type OrderType = 'LIMIT' | 'MARKET' | 'STOP_LOSS' | 'STOP_LOSS_LIMIT' | 'TAKE_PROFIT' | 'TAKE_PROFIT_LIMIT' | 'LIMIT_MAKER';
+
+export interface Order {
+    symbol: string;
+    orderId: number;
+    orderListId: number;
+    clientOrderId: string;
+    price: string;
+    origQty: string;
+    executedQty: string;
+    cummulativeQuoteQty: string;
+    status: OrderStatus;
+    timeInForce: string;
+    type: OrderType;
+    side: OrderSide;
+    stopPrice: string;
+    icebergQty: string;
+    time: number;
+    updateTime: number;
+    isWorking: boolean;
+    origQuoteOrderQty: string;
+}
+
+export interface PriceAlert {
+  id: string;
+  price: number;
+}
+// FIX: Add missing OpenPosition type for simulation panel.
+export interface OpenPosition {
+  type: 'LONG' | 'SHORT';
+  entryPrice: number;
+  size: number;
+}
+
+// FIX: Add missing EquityDataPoint type for equity chart.
+export interface EquityDataPoint {
+  time: number;
+  equity: number;
 }

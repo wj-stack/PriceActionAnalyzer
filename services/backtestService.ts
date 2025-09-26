@@ -1,4 +1,3 @@
-
 import type { DetectedPattern, Candle, BacktestSettings } from '../types';
 import { SignalDirection } from '../types';
 
@@ -15,6 +14,7 @@ export type TradeLogEvent =
   | { type: 'ENTER_SHORT'; time: number; price: number; signal: string }
   | { type: 'CLOSE_LONG'; time: number; price: number; grossPnl: number; commission: number; netPnl: number; reason: TradeCloseReason; }
   | { type: 'CLOSE_SHORT'; time: number; price: number; grossPnl: number; commission: number; netPnl: number; reason: TradeCloseReason; }
+  | { type: 'UPDATE_PNL'; time: number; price: number; unrealizedPnl: number; equity: number; }
   | { type: 'FINISH'; time: number };
 
 
@@ -27,6 +27,9 @@ export interface BacktestResult {
     tradeLog: TradeLogEvent[];
     equityCurve: EquityPoint[];
     settings: BacktestSettings;
+    maxDrawdown: number;
+    profitFactor: number;
+    avgTradeDurationBars: number;
 }
 
 
@@ -136,7 +139,7 @@ export const runBacktest = (
 ): BacktestResult => {
     const { 
         initialCapital, commissionRate, stopLoss: stopLossPercent, takeProfit: takeProfitPercent, 
-        strategy, rsiPeriod = 14, rsiOversold = 30, rsiOverbought = 70, 
+        strategy, leverage = 1, rsiPeriod = 14, rsiOversold = 30, rsiOverbought = 70, 
         bbPeriod = 20, bbStdDev = 2,
         useVolumeFilter = false, volumeMaPeriod = 20, volumeThreshold = 1.5
     } = settings;
@@ -149,7 +152,7 @@ export const runBacktest = (
         return {
             finalCapital: initialCapital, pnl: 0, pnlPercentage: 0, totalTrades: 0, winRate: 0,
             tradeLog: [ ...log, { type: 'FINISH', time: Date.now() / 1000 }],
-            equityCurve, settings
+            equityCurve, settings, maxDrawdown: 0, profitFactor: 0, avgTradeDurationBars: 0
         };
     }
 
@@ -164,50 +167,64 @@ export const runBacktest = (
     let positionSize = 0;
     let slPrice = 0;
     let tpPrice = 0;
+    
+    // Metrics variables
     let winningTrades = 0;
     let totalTrades = 0;
+    let totalGrossProfit = 0;
+    let totalGrossLoss = 0;
+    let totalTradeDurationInBars = 0;
+    let tradeEntryIndex = 0;
     
     const patternMap = new Map(patterns.map(p => [p.index, p]));
 
     for (let i = 0; i < candles.length; i++) {
         const candle = candles[i];
 
-        // 1. Check for and process exits (SL/TP)
+        // 1. Check for and process exits / update P&L
         if (position !== null) {
-            let exitPrice: number | null = null;
-            let reason: TradeCloseReason | null = null;
+            let shouldExit = false;
+            let exitPrice = 0;
+            let reason: TradeCloseReason = 'END_OF_DATA';
 
             if (position === 'LONG') {
                 if (stopLossPercent > 0 && candle.low <= slPrice) {
-                    exitPrice = candle.open <= slPrice ? candle.open : slPrice;
+                    shouldExit = true;
                     reason = 'STOP_LOSS';
+                    exitPrice = Math.min(slPrice, candle.open);
                 } else if (takeProfitPercent > 0 && candle.high >= tpPrice) {
-                    exitPrice = tpPrice;
+                    shouldExit = true;
                     reason = 'TAKE_PROFIT';
+                    exitPrice = Math.max(tpPrice, candle.open);
                 }
             } else { // SHORT
                 if (stopLossPercent > 0 && candle.high >= slPrice) {
-                    exitPrice = candle.open >= slPrice ? candle.open : slPrice;
+                    shouldExit = true;
                     reason = 'STOP_LOSS';
+                    exitPrice = Math.max(slPrice, candle.open);
                 } else if (takeProfitPercent > 0 && candle.low <= tpPrice) {
-                    exitPrice = tpPrice;
+                    shouldExit = true;
                     reason = 'TAKE_PROFIT';
+                    exitPrice = Math.min(tpPrice, candle.open);
                 }
             }
-
-            if (exitPrice !== null && reason !== null) {
-                let grossPnl = 0;
-                if (position === 'LONG') {
-                    grossPnl = (exitPrice - entryPrice) * positionSize;
-                } else { // SHORT
-                    grossPnl = (entryPrice - exitPrice) * positionSize;
-                }
+            
+            if (shouldExit) {
+                const grossPnl = position === 'LONG'
+                    ? (exitPrice - entryPrice) * positionSize
+                    : (entryPrice - exitPrice) * positionSize;
+                
                 const commission = (entryPrice * positionSize + exitPrice * positionSize) * commissionRate;
                 const netPnl = grossPnl - commission;
                 capital += netPnl;
                 totalTrades++;
                 if (netPnl > 0) winningTrades++;
                 
+                if (grossPnl > 0) totalGrossProfit += grossPnl;
+                else totalGrossLoss += grossPnl;
+                
+                totalTradeDurationInBars += (i - tradeEntryIndex);
+
                 const closeLog: TradeLogEvent = position === 'LONG' 
                   ? { type: 'CLOSE_LONG', time: candle.time, price: exitPrice, grossPnl, commission, netPnl, reason }
                   : { type: 'CLOSE_SHORT', time: candle.time, price: exitPrice, grossPnl, commission, netPnl, reason };
@@ -217,26 +234,43 @@ export const runBacktest = (
                 position = null;
                 entryPrice = 0;
                 positionSize = 0;
-                slPrice = 0;
-                tpPrice = 0;
+
+                if (capital <= 0) {
+                    break; 
+                }
+            } else {
+                // Position is still open, log unrealized P&L
+                const currentPrice = candle.close;
+                const unrealizedPnl = position === 'LONG'
+                    ? (currentPrice - entryPrice) * positionSize
+                    : (entryPrice - currentPrice) * positionSize;
+                
+                const currentEquity = capital + unrealizedPnl;
+                
+                log.push({
+                    type: 'UPDATE_PNL',
+                    time: candle.time,
+                    price: currentPrice,
+                    unrealizedPnl: unrealizedPnl,
+                    equity: currentEquity,
+                });
+                equityCurve.push({ time: candle.time, capital: currentEquity });
             }
         }
 
         // 2. Check for entries (only if flat)
-        if (position === null) {
+        if (position === null && capital > 0) {
             const pattern = patternMap.get(i);
             if (pattern) {
                 let entryConditionMet = false;
-
-                // 1. Check volume filter first if it's enabled
+                
                 if (useVolumeFilter) {
                     const avgVolume = volumeMA[i];
                     if (avgVolume === null || candle.volume <= avgVolume * volumeThreshold) {
-                        continue; // Volume condition not met, skip to next candle
+                        continue;
                     }
                 }
 
-                // 2. If volume is ok (or filter is off), check strategy
                 switch (strategy) {
                     case 'SIGNAL_ONLY':
                         entryConditionMet = true;
@@ -244,30 +278,26 @@ export const runBacktest = (
                     case 'RSI_FILTER':
                         const rsi = rsiValues[i];
                         if (rsi !== null) {
-                            if (pattern.direction === SignalDirection.Bullish && rsi <= rsiOversold) {
-                                entryConditionMet = true;
-                            } else if (pattern.direction === SignalDirection.Bearish && rsi >= rsiOverbought) {
-                                entryConditionMet = true;
-                            }
+                            if (pattern.direction === SignalDirection.Bullish && rsi <= rsiOversold) entryConditionMet = true;
+                            else if (pattern.direction === SignalDirection.Bearish && rsi >= rsiOverbought) entryConditionMet = true;
                         }
                         break;
                     case 'BOLLINGER_BANDS':
                          const bands = bbValues[i];
                          if (bands !== null) {
-                            if (pattern.direction === SignalDirection.Bullish && candle.low <= bands.lower) {
-                                entryConditionMet = true;
-                            } else if (pattern.direction === SignalDirection.Bearish && candle.high >= bands.upper) {
-                                entryConditionMet = true;
-                            }
+                            if (pattern.direction === SignalDirection.Bullish && candle.low <= bands.lower) entryConditionMet = true;
+                            else if (pattern.direction === SignalDirection.Bearish && candle.high >= bands.upper) entryConditionMet = true;
                          }
                         break;
                 }
 
-
                 if (entryConditionMet) {
                     entryPrice = candle.close;
-                    positionSize = capital / entryPrice; // Use full capital for position size
+                    const positionValue = capital * leverage;
+                    positionSize = positionValue / entryPrice;
                     const signalName = t(pattern.name);
+                    tradeEntryIndex = i;
+
                     if (pattern.direction === SignalDirection.Bullish) {
                         position = 'LONG';
                         slPrice = entryPrice * (1 - stopLossPercent / 100);
@@ -286,28 +316,49 @@ export const runBacktest = (
     
     // 3. Close any open position at the end of data
     if (position !== null) {
-        const lastPrice = candles[candles.length-1].close;
-        let grossPnl = 0;
-        if(position === 'LONG') {
-            grossPnl = (lastPrice - entryPrice) * positionSize;
-        } else { // SHORT
-            grossPnl = (entryPrice - lastPrice) * positionSize;
-        }
+        const lastCandle = candles[candles.length - 1];
+        const lastPrice = lastCandle.close;
+        const grossPnl = position === 'LONG'
+            ? (lastPrice - entryPrice) * positionSize
+            : (entryPrice - lastPrice) * positionSize;
+        
         const commission = (entryPrice * positionSize + lastPrice * positionSize) * commissionRate;
         const netPnl = grossPnl - commission;
         capital += netPnl;
         totalTrades++;
         if(netPnl > 0) winningTrades++;
+
+        if (grossPnl > 0) totalGrossProfit += grossPnl;
+        else totalGrossLoss += grossPnl;
+
+        totalTradeDurationInBars += (candles.length - 1 - tradeEntryIndex);
+        
         const endLog: TradeLogEvent = position === 'LONG'
-            ? { type: 'CLOSE_LONG', time: candles[candles.length - 1].time, price: lastPrice, grossPnl, commission, netPnl, reason: 'END_OF_DATA' }
-            : { type: 'CLOSE_SHORT', time: candles[candles.length - 1].time, price: lastPrice, grossPnl, commission, netPnl, reason: 'END_OF_DATA' };
+            ? { type: 'CLOSE_LONG', time: lastCandle.time, price: lastPrice, grossPnl, commission, netPnl, reason: 'END_OF_DATA' }
+            : { type: 'CLOSE_SHORT', time: lastCandle.time, price: lastPrice, grossPnl, commission, netPnl, reason: 'END_OF_DATA' };
         log.push(endLog);
-        equityCurve.push({ time: candles[candles.length - 1].time, capital });
+        equityCurve.push({ time: lastCandle.time, capital });
     }
 
+    capital = Math.max(0, capital); // Ensure capital doesn't go negative in final result
+    
+    // Calculate final metrics
     const pnl = capital - initialCapital;
     const pnlPercentage = (pnl / initialCapital) * 100;
     const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
+    const profitFactor = totalGrossLoss !== 0 ? totalGrossProfit / Math.abs(totalGrossLoss) : Infinity;
+    const avgTradeDurationBars = totalTrades > 0 ? totalTradeDurationInBars / totalTrades : 0;
+
+    // Calculate Max Drawdown from the equity curve
+    let peakEquityForDrawdown = initialCapital;
+    let maxDrawdown = 0;
+    for (const point of equityCurve) {
+        peakEquityForDrawdown = Math.max(peakEquityForDrawdown, point.capital);
+        const drawdown = peakEquityForDrawdown > 0 ? (peakEquityForDrawdown - point.capital) / peakEquityForDrawdown : 0;
+        if (drawdown > maxDrawdown) {
+            maxDrawdown = drawdown;
+        }
+    }
     
     log.push({ type: 'FINISH', time: candles.length > 0 ? candles[candles.length - 1].time : Date.now() / 1000 });
 
@@ -320,5 +371,8 @@ export const runBacktest = (
         tradeLog: log.reverse(), // Show most recent events first
         equityCurve,
         settings,
+        maxDrawdown,
+        profitFactor,
+        avgTradeDurationBars,
     };
 };

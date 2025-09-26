@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { ResponsiveContainer, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Bar, ReferenceDot } from 'recharts';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ResponsiveContainer, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Bar, ReferenceDot, ReferenceLine } from 'recharts';
 import type { Candle, DetectedPattern } from '../types';
 import { SignalDirection } from '../types';
 import { ZoomInIcon } from './icons/ZoomInIcon';
@@ -9,7 +9,6 @@ import { ChevronLeftIcon } from './icons/ChevronLeftIcon';
 import { ChevronRightIcon } from './icons/ChevronRightIcon';
 import { ExpandIcon } from './icons/ExpandIcon';
 import { useLanguage } from '../contexts/LanguageContext';
-
 
 interface PriceChartProps {
     data: Candle[];
@@ -54,17 +53,17 @@ const CustomCandlestick = (props: any) => {
     );
 };
 
-const CustomTooltip = ({ active, payload, label, t }: any) => {
+const CustomTooltip = ({ active, payload, label, t, formatPrice }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
       <div className="bg-gray-700/80 backdrop-blur-sm p-3 border border-gray-600 rounded-md shadow-lg text-sm">
         <p className="label text-gray-300">{new Date(data.time * 1000).toLocaleString()}</p>
         <p className={`text-${data.isBullish ? 'green' : 'red'}-400`}>
-            <span className="font-bold">{t('tooltipOpen')}:</span> {data.open.toFixed(2)} <span className="font-bold ml-2">{t('tooltipHigh')}:</span> {data.high.toFixed(2)}
+            <span className="font-bold">{t('tooltipOpen')}:</span> {formatPrice(data.open)} <span className="font-bold ml-2">{t('tooltipHigh')}:</span> {formatPrice(data.high)}
         </p>
          <p className={`text-${data.isBullish ? 'green' : 'red'}-400`}>
-            <span className="font-bold">{t('tooltipLow')}:</span> {data.low.toFixed(2)} <span className="font-bold ml-2">{t('tooltipClose')}:</span> {data.close.toFixed(2)}
+            <span className="font-bold">{t('tooltipLow')}:</span> {formatPrice(data.low)} <span className="font-bold ml-2">{t('tooltipClose')}:</span> {formatPrice(data.close)}
         </p>
         <p className="text-gray-400"><span className="font-bold">{t('tooltipVolume')}:</span> {data.volume.toFixed(2)}</p>
       </div>
@@ -107,19 +106,32 @@ const PatternAnnotation = ({ cx, cy, payload, direction, isHovered }: any) => {
     )
 };
 
-export const PriceChart: React.FC<PriceChartProps> = ({ data, patterns, hoveredPatternIndex }) => {
+const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hoveredPatternIndex }) => {
     const { t } = useLanguage();
-
-    if (!data || data.length === 0) {
-        return <div className="h-[600px] flex items-center justify-center text-gray-500">{t('noData')}</div>;
-    }
-
     const [range, setRange] = useState({ start: 0, end: data.length });
+    const prevDataRef = useRef<Candle[] | null>(null);
+    const [mousePrice, setMousePrice] = useState<number | null>(null);
 
-    // Reset zoom when data changes
+    // Smartly update the visible range on data changes
     useEffect(() => {
-        setRange({ start: 0, end: data.length });
-    }, [data]);
+        const prevData = prevDataRef.current;
+        const isFullReload = !prevData || data.length === 0 || prevData.length === 0 || prevData[0].time !== data[0].time;
+
+        if (isFullReload) {
+            setRange({ start: 0, end: data.length });
+        } else {
+            const wasAtTheEnd = range.end === prevData.length;
+            if (wasAtTheEnd) {
+                setRange(currentRange => {
+                    const numVisibleCandles = currentRange.end - currentRange.start;
+                    const newEnd = data.length;
+                    const newStart = Math.max(0, newEnd - numVisibleCandles);
+                    return { start: newStart, end: newEnd };
+                });
+            }
+        }
+        prevDataRef.current = data;
+    }, [data, range.end]);
 
     const visibleData = useMemo(() => {
         return data.map(candle => ({
@@ -147,6 +159,14 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, patterns, hoveredP
     const visiblePatterns = useMemo(() => {
         return patterns.filter(p => p.index >= range.start && p.index < range.end);
     }, [patterns, range]);
+
+    const formatPrice = (price: number): string => {
+        if (typeof price !== 'number' || isNaN(price)) return '';
+        if (price >= 100) return price.toFixed(2);
+        if (price >= 0.1) return price.toFixed(4);
+        if (price >= 0.001) return price.toFixed(6);
+        return price.toFixed(8);
+    };
 
     const handleZoom = (factor: number) => {
         const middleIndex = Math.floor((range.start + range.end) / 2);
@@ -187,6 +207,21 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, patterns, hoveredP
     const handleReset = () => {
         setRange({ start: 0, end: data.length });
     };
+
+    const handleMouseMove = (e: any) => {
+        if (e?.chartY && e.yAxisMap) {
+            const yAxisKey = Object.keys(e.yAxisMap)[0];
+            const yAxis = e.yAxisMap[yAxisKey];
+            if (yAxis) {
+                const price = yAxis.scale.invert(e.chartY);
+                setMousePrice(price);
+            }
+        }
+    };
+
+    const handleMouseLeave = () => {
+        setMousePrice(null);
+    };
     
     const getTickFormatter = (numVisible: number) => {
         if (numVisible <= 30) {
@@ -211,7 +246,11 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, patterns, hoveredP
     const canPanLeft = range.start > 0;
     const canPanRight = range.end < data.length;
     const canZoomIn = range.end - range.start > 10;
+    const latestPrice = data.length > 0 ? data[data.length - 1].close : null;
 
+    if (!data || data.length === 0) {
+        return <div className="h-[600px] flex items-center justify-center text-gray-500">{t('noData')}</div>;
+    }
 
     return (
         <div className="relative" style={{ width: '100%', height: 600 }}>
@@ -223,7 +262,12 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, patterns, hoveredP
                 <button title={t('resetZoom')} onClick={handleReset} disabled={!isZoomedIn} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ExpandIcon className="w-5 h-5" /></button>
             </div>
             <ResponsiveContainer>
-                <ComposedChart data={visibleData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <ComposedChart 
+                    data={visibleData} 
+                    margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                >
                     <CartesianGrid strokeDasharray="3 3" stroke="#4B5563" />
                     <XAxis 
                         dataKey="time" 
@@ -231,15 +275,54 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, patterns, hoveredP
                         stroke="#9CA3AF"
                         minTickGap={80}
                         interval="preserveStartEnd"
+                        domain={['dataMin', 'dataMax']}
+                        type="number"
+                        scale="time"
                     />
                     <YAxis 
                         orientation="right" 
                         domain={yDomain}
                         stroke="#9CA3AF" 
-                        tickFormatter={(value) => typeof value === 'number' ? value.toFixed(2) : ''}
+                        tickFormatter={(value) => formatPrice(Number(value))}
                         allowDataOverflow={true}
+                        type="number"
                     />
-                    <Tooltip content={<CustomTooltip t={t} />} />
+                    <Tooltip content={<CustomTooltip t={t} formatPrice={formatPrice} />} />
+
+                    {/* Latest Price Line */}
+                    {latestPrice !== null && (
+                        <ReferenceLine
+                            y={latestPrice}
+                            stroke="rgb(252 211 77 / 0.9)" // Amber color
+                            strokeDasharray="3 3"
+                            strokeWidth={1.5}
+                            ifOverflow="extendDomain"
+                            label={{
+                                position: 'right',
+                                value: formatPrice(latestPrice),
+                                fill: 'rgb(252 211 77)',
+                                fontSize: 11,
+                                fontWeight: 'bold',
+                            }}
+                        />
+                    )}
+
+                    {/* Mouse Crosshair Price Line */}
+                    {mousePrice !== null && (
+                         <ReferenceLine
+                            y={mousePrice}
+                            stroke="#9CA3AF"
+                            strokeDasharray="2 2"
+                            strokeWidth={1}
+                            ifOverflow="visible"
+                            label={{
+                                position: 'right',
+                                value: formatPrice(mousePrice),
+                                fill: '#D1D5DB',
+                                fontSize: 11,
+                            }}
+                        />
+                    )}
 
                     <Bar dataKey="wick" shape={<CustomCandlestick />} />
 
@@ -260,3 +343,5 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, patterns, hoveredP
         </div>
     );
 };
+
+export const PriceChart = React.memo(PriceChartComponent);

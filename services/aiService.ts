@@ -70,6 +70,7 @@ Briefly mention the risk-reward ratio for the initial target and advise on trade
 
     try {
         const response = await ai.models.generateContent({
+            // FIX: Updated model to gemini-2.5-flash per guidelines.
             model: 'gemini-2.5-flash',
             contents: userPrompt,
             config: {
@@ -191,6 +192,7 @@ ${multiTimeframeDataString}
 
     try {
         const response = await ai.models.generateContent({
+            // FIX: Updated model to gemini-2.5-flash per guidelines.
             model: 'gemini-2.5-flash',
             contents: prompt,
             config: {

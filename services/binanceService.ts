@@ -1,9 +1,10 @@
 
+
 import type { BinanceKline, Candle } from '../types';
 
 const API_BASE_URL = 'https://api.binance.com/api/v3/klines';
 const EXCHANGE_INFO_URL = 'https://api.binance.com/api/v3/exchangeInfo';
-
+const WEBSOCKET_BASE_URL = 'wss://stream.binance.com:9443/ws';
 
 // --- Type definitions for Exchange Info ---
 interface BinanceSymbol {
@@ -16,6 +17,20 @@ interface BinanceSymbol {
 
 interface ExchangeInfo {
     symbols: BinanceSymbol[];
+}
+
+// --- Type definition for WebSocket Kline data ---
+interface BinanceWsKline {
+  t: number; // Kline start time
+  T: number; // Kline close time
+  s: string; // Symbol
+  i: string; // Interval
+  o: string; // Open price
+  c: string; // Close price
+  h: string; // High price
+  l: string; // Low price
+  v: string; // Base asset volume
+  x: boolean; // Is this kline closed?
 }
 
 
@@ -95,8 +110,8 @@ export const fetchExchangeInfo = async (): Promise<{ value: string; label: strin
     }
 };
 
-// Helper to map Binance Kline data to our Candle format
-const mapBinanceKlineToCandle = (kline: BinanceKline): Candle => {
+// Helper to map Binance REST API Kline data to our Candle format
+const mapBinanceRestKlineToCandle = (kline: BinanceKline): Candle => {
     const open = parseFloat(kline[1]);
     const close = parseFloat(kline[4]);
     return {
@@ -107,45 +122,135 @@ const mapBinanceKlineToCandle = (kline: BinanceKline): Candle => {
         close: close,
         volume: parseFloat(kline[5]),
         isBullish: close >= open,
+        isClosed: true, // Historical data is always closed
     };
 };
 
+// Helper to map Binance WebSocket Kline data to our Candle format
+const mapBinanceWsKlineToCandle = (kline: BinanceWsKline): Candle => {
+    const open = parseFloat(kline.o);
+    const close = parseFloat(kline.c);
+    return {
+        time: kline.t / 1000, // convert ms to seconds
+        open: open,
+        high: parseFloat(kline.h),
+        low: parseFloat(kline.l),
+        close: close,
+        volume: parseFloat(kline.v),
+        isBullish: close >= open,
+        isClosed: kline.x,
+    };
+};
+
+/**
+ * Fetches historical k-line data within a specified date range, paginating backwards from the end time.
+ */
 export const fetchKlines = async (symbol: string, interval: string, limit: number = 1000, startTime?: number, endTime?: number): Promise<Candle[]> => {
-    let url = `${API_BASE_URL}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+    let allKlines: BinanceKline[] = [];
+    let currentEndTime = endTime || Date.now();
+    const limitPerRequest = 1000;
 
-    if (startTime) {
-        url += `&startTime=${Math.floor(startTime)}`;
-    }
-    if (endTime) {
-        url += `&endTime=${Math.floor(endTime)}`;
-    }
-
-
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            const curlCommand = `curl "${url}"`;
-            console.error("Public API request failed (klines). Debug with curl:");
-            console.error(curlCommand);
-            throw new Error(`Binance API Error: ${response.status} ${response.statusText}`);
-        }
+    // Fetch data in chunks backwards from the end time until we hit the start time or the specified limit.
+    while (true) {
+        const url = new URL(API_BASE_URL);
+        url.searchParams.append('symbol', symbol);
+        url.searchParams.append('interval', interval);
+        url.searchParams.append('limit', String(limitPerRequest));
+        url.searchParams.append('endTime', String(currentEndTime));
         
-        const klineData: BinanceKline[] = await response.json();
-
-        if (!Array.isArray(klineData)) {
-             throw new Error(`Invalid data structure received from Klines API.`);
+        if (startTime) {
+            url.searchParams.append('startTime', String(startTime));
         }
 
-        return klineData.map(mapBinanceKlineToCandle);
+        try {
+            const response = await fetch(url.toString());
+            if (!response.ok) {
+                const curlCommand = `curl "${url.toString()}"`;
+                console.error("Public API request failed (klines). Debug with curl:");
+                console.error(curlCommand);
+                throw new Error(`Binance API Error: ${response.status} ${response.statusText}`);
+            }
 
-    } catch (error) {
-        // Avoid double-logging if we already logged the curl command for a non-ok response
-        if (!(error instanceof Error && error.message.startsWith('Binance API Error:'))) {
-            const curlCommand = `curl "${url}"`;
+            const klineData: BinanceKline[] = await response.json();
+            if (!Array.isArray(klineData)) {
+                throw new Error(`Invalid data structure received from Klines API.`);
+            }
+
+            if (klineData.length === 0) {
+                break; // No more data in this range.
+            }
+            
+            allKlines = [...klineData, ...allKlines];
+            
+            const firstCandleTime = klineData[0][0];
+
+            // Stop if we've fetched data from before our desired start time.
+            if (startTime && firstCandleTime <= startTime) {
+                break;
+            }
+            
+            // Set the end time for the next older chunk.
+            currentEndTime = firstCandleTime - 1;
+
+        } catch (error) {
+            const curlCommand = `curl "${url.toString()}"`;
             console.error("Public API request failed at network level (klines). Debug with curl:");
             console.error(curlCommand);
+            console.error(`Failed to fetch k-line data:`, error, "url", url.toString());
+            throw error;
         }
-        console.error(`Failed to fetch k-line data:`, error, "url", url);
-        throw error;
     }
+    
+    // De-duplicate candles and filter again to ensure we are strictly within bounds.
+    const uniqueKlinesMap = new Map<number, BinanceKline>();
+    for (const kline of allKlines) {
+        if (startTime && kline[0] < startTime) continue;
+        if (endTime && kline[0] > endTime) continue;
+        uniqueKlinesMap.set(kline[0], kline);
+    }
+    
+    const sortedKlines = Array.from(uniqueKlinesMap.values()).sort((a, b) => a[0] - b[0]);
+
+    return sortedKlines.map(mapBinanceRestKlineToCandle);
+};
+
+
+/**
+ * Subscribes to a WebSocket k-line stream for real-time updates.
+ * @param symbol The trading symbol (e.g., 'BTCUSDT').
+ * @param interval The timeframe interval (e.g., '1h').
+ * @param onMessageCallback A function to call with the updated Candle data.
+ * @returns A cleanup function to close the WebSocket connection.
+ */
+export const subscribeToKlineStream = (
+    symbol: string,
+    interval: string,
+    onMessageCallback: (candle: Candle) => void
+): (() => void) => {
+    const ws = new WebSocket(`${WEBSOCKET_BASE_URL}/${symbol.toLowerCase()}@kline_${interval}`);
+
+    ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.k) { // 'k' is the key for kline data in the message
+            const candle = mapBinanceWsKlineToCandle(message.k);
+            onMessageCallback(candle);
+        }
+    };
+
+    ws.onerror = (error) => {
+        console.error('WebSocket Error:', error);
+    };
+
+    ws.onclose = () => {
+        console.log(`WebSocket disconnected for ${symbol}@kline_${interval}`);
+    };
+    
+    console.log(`WebSocket connected for ${symbol}@kline_${interval}`);
+
+    // Return a cleanup function to be called on component unmount or dependency change
+    return () => {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            ws.close();
+        }
+    };
 };

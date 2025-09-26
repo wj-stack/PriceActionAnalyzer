@@ -9,4 +9,4 @@ export const resources = {
   zh: { translation: zh },
 };
 
-export const defaultLocale: Locale = 'en';
+export const defaultLocale: Locale = 'zh';
