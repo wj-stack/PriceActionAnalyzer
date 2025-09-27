@@ -8,8 +8,7 @@ import { RefreshIcon } from './icons/RefreshIcon';
 import { useLanguage } from '../contexts/LanguageContext';
 import { FilterIcon } from './icons/FilterIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
-import { SettingsIcon } from './icons/SettingsIcon';
-import { PatternType, BacktestStrategy, PriceAlert } from '../types';
+import { PatternType, PriceAlert } from '../types';
 import { BrainIcon } from './icons/BrainIcon';
 import { AlertIcon } from './icons/AlertIcon';
 import { CloseIcon } from './icons/CloseIcon';
@@ -31,30 +30,6 @@ interface ControlPanelProps {
     setSelectedPatterns: (patterns: Set<string>) => void;
     onRunBacktest: () => void;
     onOpenDecisionMakerModal: () => void;
-    stopLoss: number;
-    setStopLoss: (value: number) => void;
-    takeProfit: number;
-    setTakeProfit: (value: number) => void;
-    leverage: number;
-    setLeverage: (value: number) => void;
-    backtestStrategy: BacktestStrategy;
-    setBacktestStrategy: (strategy: BacktestStrategy) => void;
-    rsiPeriod: number;
-    setRsiPeriod: (value: number) => void;
-    rsiOversold: number;
-    setRsiOversold: (value: number) => void;
-    rsiOverbought: number;
-    setRsiOverbought: (value: number) => void;
-    bbPeriod: number;
-    setBbPeriod: (value: number) => void;
-    bbStdDev: number;
-    setBbStdDev: (value: number) => void;
-    useVolumeFilter: boolean;
-    setUseVolumeFilter: (value: boolean) => void;
-    volumeMaPeriod: number;
-    setVolumeMaPeriod: (value: number) => void;
-    volumeThreshold: number;
-    setVolumeThreshold: (value: number) => void;
     alerts: Record<string, PriceAlert[]>;
     addAlert: (symbol: string, price: number) => void;
     removeAlert: (symbol: string, id: string) => void;
@@ -85,23 +60,10 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
     selectedPatterns, setSelectedPatterns,
     onRunBacktest,
     onOpenDecisionMakerModal,
-    stopLoss, setStopLoss,
-    takeProfit, setTakeProfit,
-    leverage, setLeverage,
-    backtestStrategy, setBacktestStrategy,
-    rsiPeriod, setRsiPeriod,
-    rsiOversold, setRsiOversold,
-    rsiOverbought, setRsiOverbought,
-    bbPeriod, setBbPeriod,
-    bbStdDev, setBbStdDev,
-    useVolumeFilter, setUseVolumeFilter,
-    volumeMaPeriod, setVolumeMaPeriod,
-    volumeThreshold, setVolumeThreshold,
     alerts, addAlert, removeAlert
 }) => {
     const { locale, setLocale, t } = useLanguage();
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isAlertPopoverOpen, setIsAlertPopoverOpen] = useState(false);
     const [newAlertPrice, setNewAlertPrice] = useState('');
     const [isSymbolDropdownOpen, setIsSymbolDropdownOpen] = useState(false);
@@ -109,7 +71,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
     const [visibleSymbolCount, setVisibleSymbolCount] = useState(50);
 
     const filterMenuRef = useRef<HTMLDivElement>(null);
-    const settingsMenuRef = useRef<HTMLDivElement>(null);
     const alertPopoverRef = useRef<HTMLDivElement>(null);
     const symbolDropdownRef = useRef<HTMLDivElement>(null);
     const symbolListRef = useRef<HTMLUListElement>(null);
@@ -125,9 +86,6 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
         const handleClickOutside = (event: MouseEvent) => {
             if (filterMenuRef.current && !filterMenuRef.current.contains(event.target as Node)) {
                 setIsFilterOpen(false);
-            }
-            if (settingsMenuRef.current && !settingsMenuRef.current.contains(event.target as Node)) {
-                setIsSettingsOpen(false);
             }
             if (symbolDropdownRef.current && !symbolDropdownRef.current.contains(event.target as Node)) {
                 setIsSymbolDropdownOpen(false);
@@ -362,118 +320,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
                     </div>
                 )}
             </div>
-             <div className="relative" ref={settingsMenuRef}>
-                 <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('backtestSettings')}>
-                    <SettingsIcon className="w-5 h-5" />
-                </button>
-                {isSettingsOpen && (
-                    <div className="absolute right-0 mt-2 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl z-30 p-4 text-sm max-h-[80vh] overflow-y-auto">
-                        <h4 className="font-bold text-base text-cyan-400 mb-3">{t('backtestSettings')}</h4>
-                        <div className="space-y-3">
-                            <div>
-                                <label htmlFor="backtest-strategy" className="block text-gray-300 mb-1">{t('backtestStrategy')}</label>
-                                <select id="backtest-strategy" value={backtestStrategy} onChange={(e) => setBacktestStrategy(e.target.value as BacktestStrategy)} className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1 focus:ring-cyan-500 focus:border-cyan-500">
-                                    <option value="SIGNAL_ONLY">{t('strategySignalOnly')}</option>
-                                    <option value="RSI_FILTER">{t('strategyRsiFilter')}</option>
-                                    <option value="BOLLINGER_BANDS">{t('strategyBBFilter')}</option>
-                                </select>
-                            </div>
 
-                            {backtestStrategy === 'RSI_FILTER' && (
-                                <div className="pl-2 border-l-2 border-gray-700 space-y-3">
-                                    <div>
-                                        <label htmlFor="rsi-period" className="block text-gray-300 mb-1">{t('rsiPeriod')}</label>
-                                        <input type="number" id="rsi-period" value={rsiPeriod} onChange={(e) => setRsiPeriod(parseInt(e.target.value) || 1)} min="1" className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1" />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="rsi-oversold" className="block text-gray-300 mb-1">{t('rsiOversold')}</label>
-                                        <input type="number" id="rsi-oversold" value={rsiOversold} onChange={(e) => setRsiOversold(parseInt(e.target.value) || 0)} min="0" max="100" className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1" />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="rsi-overbought" className="block text-gray-300 mb-1">{t('rsiOverbought')}</label>
-                                        <input type="number" id="rsi-overbought" value={rsiOverbought} onChange={(e) => setRsiOverbought(parseInt(e.target.value) || 0)} min="0" max="100" className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1" />
-                                    </div>
-                                </div>
-                            )}
-
-                             {backtestStrategy === 'BOLLINGER_BANDS' && (
-                                <div className="pl-2 border-l-2 border-gray-700 space-y-3">
-                                    <div>
-                                        <label htmlFor="bb-period" className="block text-gray-300 mb-1">{t('bbPeriod')}</label>
-                                        <input type="number" id="bb-period" value={bbPeriod} onChange={(e) => setBbPeriod(parseInt(e.target.value) || 1)} min="1" className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1" />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="bb-stddev" className="block text-gray-300 mb-1">{t('bbStdDev')}</label>
-                                        <input type="number" id="bb-stddev" value={bbStdDev} onChange={(e) => setBbStdDev(parseFloat(e.target.value) || 0)} min="0" step="0.1" className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1" />
-                                    </div>
-                                </div>
-                            )}
-
-                            <hr className="border-gray-600" />
-
-                            <div>
-                                <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={useVolumeFilter} 
-                                        onChange={(e) => setUseVolumeFilter(e.target.checked)}
-                                        className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" 
-                                    />
-                                    {t('enableVolumeFilter')}
-                                </label>
-                            </div>
-                            {useVolumeFilter && (
-                                <div className="pl-2 border-l-2 border-gray-700 space-y-3">
-                                    <div>
-                                        <label htmlFor="volume-ma-period" className="block text-gray-300 mb-1">{t('volumeMaPeriod')}</label>
-                                        <input type="number" id="volume-ma-period" value={volumeMaPeriod} onChange={(e) => setVolumeMaPeriod(parseInt(e.target.value) || 1)} min="1" className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1" />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="volume-threshold" className="block text-gray-300 mb-1">{t('volumeThreshold')}</label>
-                                        <input type="number" id="volume-threshold" value={volumeThreshold} onChange={(e) => setVolumeThreshold(parseFloat(e.target.value) || 0)} min="0" step="0.1" className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1" />
-                                    </div>
-                                </div>
-                            )}
-
-                            <hr className="border-gray-600" />
-                            <div>
-                                <label htmlFor="leverage" className="block text-gray-300 mb-1">{t('leverage')} (x)</label>
-                                <input 
-                                    type="number" 
-                                    id="leverage" 
-                                    value={leverage} 
-                                    onChange={(e) => setLeverage(parseFloat(e.target.value) || 1)}
-                                    min="1" max="125"
-                                    className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1 focus:ring-cyan-500 focus:border-cyan-500"
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="stop-loss" className="block text-gray-300 mb-1">{t('stopLoss')} (%)</label>
-                                <input 
-                                    type="number" 
-                                    id="stop-loss" 
-                                    value={stopLoss} 
-                                    onChange={(e) => setStopLoss(parseFloat(e.target.value) || 0)}
-                                    min="0"
-                                    className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1 focus:ring-cyan-500 focus:border-cyan-500"
-                                />
-                                 <p className="text-xs text-gray-500 mt-1">{t('slTpHelpText')}</p>
-                            </div>
-                             <div>
-                                <label htmlFor="take-profit" className="block text-gray-300 mb-1">{t('takeProfit')} (%)</label>
-                                <input 
-                                    type="number" 
-                                    id="take-profit" 
-                                    value={takeProfit} 
-                                    onChange={(e) => setTakeProfit(parseFloat(e.target.value) || 0)}
-                                    min="0"
-                                    className="w-full bg-gray-700 border border-gray-600 rounded-md px-2 py-1 focus:ring-cyan-500 focus:border-cyan-500"
-                                />
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
             <div className="relative" ref={alertPopoverRef}>
                 <button 
                     onClick={() => setIsAlertPopoverOpen(!isAlertPopoverOpen)} 

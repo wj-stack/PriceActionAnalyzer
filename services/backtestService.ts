@@ -1,4 +1,4 @@
-import type { DetectedPattern, Candle, BacktestSettings } from '../types';
+import type { DetectedPattern, Candle, BacktestSettings, TradeCloseReason } from '../types';
 import { SignalDirection } from '../types';
 
 export interface EquityPoint {
@@ -6,14 +6,12 @@ export interface EquityPoint {
     capital: number;
 }
 
-export type TradeCloseReason = 'STOP_LOSS' | 'TAKE_PROFIT' | 'END_OF_DATA';
-
 export type TradeLogEvent =
   | { type: 'START'; time: number; capital: number }
-  | { type: 'ENTER_LONG'; time: number; price: number; signal: string }
-  | { type: 'ENTER_SHORT'; time: number; price: number; signal: string }
-  | { type: 'CLOSE_LONG'; time: number; price: number; grossPnl: number; commission: number; netPnl: number; reason: TradeCloseReason; }
-  | { type: 'CLOSE_SHORT'; time: number; price: number; grossPnl: number; commission: number; netPnl: number; reason: TradeCloseReason; }
+  | { type: 'ENTER_LONG'; time: number; price: number; signal: string; size: number; value: number; capital: number; }
+  | { type: 'ENTER_SHORT'; time: number; price: number; signal: string; size: number; value: number; capital: number; }
+  | { type: 'CLOSE_LONG'; time: number; price: number; grossPnl: number; commission: number; netPnl: number; reason: TradeCloseReason; entryPrice: number; size: number; duration: number; capital: number; }
+  | { type: 'CLOSE_SHORT'; time: number; price: number; grossPnl: number; commission: number; netPnl: number; reason: TradeCloseReason; entryPrice: number; size: number; duration: number; capital: number; }
   | { type: 'UPDATE_PNL'; time: number; price: number; unrealizedPnl: number; equity: number; }
   | { type: 'FINISH'; time: number };
 
@@ -30,6 +28,17 @@ export interface BacktestResult {
     maxDrawdown: number;
     profitFactor: number;
     avgTradeDurationBars: number;
+}
+
+// Internal state for an open position
+interface Position {
+    direction: 'LONG' | 'SHORT';
+    entryPrice: number;
+    size: number;
+    slPrice: number;
+    tpPrice: number;
+    entrySignal: DetectedPattern;
+    entryIndex: number;
 }
 
 
@@ -127,6 +136,36 @@ const calculateBollingerBands = (candles: Candle[], period: number, stdDev: numb
     return bands;
 };
 
+const calculateATR = (candles: Candle[], period: number): (number | null)[] => {
+    const atrValues: (number | null)[] = new Array(candles.length).fill(null);
+    if (candles.length < period) return atrValues;
+
+    const trValues: number[] = [];
+    trValues.push(candles[0].high - candles[0].low); // First TR is just H-L
+
+    for (let i = 1; i < candles.length; i++) {
+        const high = candles[i].high;
+        const low = candles[i].low;
+        const prevClose = candles[i - 1].close;
+        const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+        trValues.push(tr);
+    }
+
+    // Calculate initial ATR as SMA of TR
+    let sumTR = 0;
+    for (let i = 0; i < period; i++) {
+        sumTR += trValues[i];
+    }
+    atrValues[period - 1] = sumTR / period;
+
+    // Calculate subsequent ATRs using smoothing
+    for (let i = period; i < candles.length; i++) {
+        atrValues[i] = (atrValues[i - 1]! * (period - 1) + trValues[i]) / period;
+    }
+
+    return atrValues;
+};
+
 
 /**
  * Runs a backtest strategy with configurable strategies, Stop Loss and Take Profit.
@@ -139,9 +178,11 @@ export const runBacktest = (
 ): BacktestResult => {
     const { 
         initialCapital, commissionRate, stopLoss: stopLossPercent, takeProfit: takeProfitPercent, 
-        strategy, leverage = 1, rsiPeriod = 14, rsiOversold = 30, rsiOverbought = 70, 
+        strategy, leverage = 1, positionSizePercent = 100, rsiPeriod = 14, rsiOversold = 30, rsiOverbought = 70, 
         bbPeriod = 20, bbStdDev = 2,
-        useVolumeFilter = false, volumeMaPeriod = 20, volumeThreshold = 1.5
+        useVolumeFilter = false, volumeMaPeriod = 20, volumeThreshold = 1.5,
+        atrPeriod = 14, atrMultiplierSL = 2, atrMultiplierTP = 3,
+        useAtrPositionSizing = false, riskPerTradePercent = 1
     } = settings;
 
     const startTime = candles.length > 0 ? candles[0].time - 1 : Date.now() / 1000;
@@ -159,14 +200,11 @@ export const runBacktest = (
     // Pre-calculate indicators
     const rsiValues = strategy === 'RSI_FILTER' ? calculateRSI(candles, rsiPeriod) : [];
     const bbValues = strategy === 'BOLLINGER_BANDS' ? calculateBollingerBands(candles, bbPeriod, bbStdDev) : [];
+    const atrValues = (strategy === 'ATR_TRAILING_STOP' || useAtrPositionSizing) ? calculateATR(candles, atrPeriod) : [];
     const volumeMA = useVolumeFilter ? calculateSMA(candles.map(c => c.volume), volumeMaPeriod) : [];
 
     let capital = initialCapital;
-    let position: 'LONG' | 'SHORT' | null = null;
-    let entryPrice = 0;
-    let positionSize = 0;
-    let slPrice = 0;
-    let tpPrice = 0;
+    let position: Position | null = null;
     
     // Metrics variables
     let winningTrades = 0;
@@ -174,155 +212,316 @@ export const runBacktest = (
     let totalGrossProfit = 0;
     let totalGrossLoss = 0;
     let totalTradeDurationInBars = 0;
-    let tradeEntryIndex = 0;
     
     const patternMap = new Map(patterns.map(p => [p.index, p]));
 
+    // Helper to check if a signal is valid according to the current strategy filters
+    const isSignalValid = (pattern: DetectedPattern, candle: Candle, i: number): boolean => {
+        if (useVolumeFilter) {
+            const avgVolume = volumeMA[i];
+            if (avgVolume === null || candle.volume <= avgVolume * volumeThreshold) {
+                return false; // Fails volume filter
+            }
+        }
+    
+        switch (strategy) {
+            case 'SIGNAL_ONLY':
+            case 'ATR_TRAILING_STOP': // ATR is for exits, not entries, so entry is valid by default
+                return true;
+            case 'RSI_FILTER': {
+                const rsi = rsiValues[i];
+                if (rsi !== null) {
+                    if (pattern.direction === SignalDirection.Bullish && rsi <= rsiOversold) return true;
+                    if (pattern.direction === SignalDirection.Bearish && rsi >= rsiOverbought) return true;
+                }
+                return false;
+            }
+            case 'BOLLINGER_BANDS': {
+                const bands = bbValues[i];
+                if (bands !== null) {
+                    if (pattern.direction === SignalDirection.Bullish && candle.low <= bands.lower) return true;
+                    if (pattern.direction === SignalDirection.Bearish && candle.high >= bands.upper) return true;
+                }
+                return false;
+            }
+            default:
+                return false;
+        }
+    };
+
+
     for (let i = 0; i < candles.length; i++) {
         const candle = candles[i];
+        const pattern = patternMap.get(i);
+        let processedActionOnCandle = false;
 
-        // 1. Check for and process exits / update P&L
-        if (position !== null) {
-            let shouldExit = false;
-            let exitPrice = 0;
-            let reason: TradeCloseReason = 'END_OF_DATA';
-
-            if (position === 'LONG') {
-                if (stopLossPercent > 0 && candle.low <= slPrice) {
-                    shouldExit = true;
-                    reason = 'STOP_LOSS';
-                    exitPrice = Math.min(slPrice, candle.open);
-                } else if (takeProfitPercent > 0 && candle.high >= tpPrice) {
-                    shouldExit = true;
-                    reason = 'TAKE_PROFIT';
-                    exitPrice = Math.max(tpPrice, candle.open);
+        // --- 1. HANDLE OPEN POSITION ---
+        if (position) {
+            // Update trailing stop for ATR strategy
+            if (strategy === 'ATR_TRAILING_STOP') {
+                const atr = atrValues[i];
+                if (atr) {
+                    if (position.direction === 'LONG') {
+                        const newSlPrice = candle.close - atr * atrMultiplierSL;
+                        if (newSlPrice > position.slPrice) {
+                            position.slPrice = newSlPrice;
+                        }
+                    } else { // SHORT
+                        const newSlPrice = candle.close + atr * atrMultiplierSL;
+                        if (newSlPrice < position.slPrice) {
+                            position.slPrice = newSlPrice;
+                        }
+                    }
                 }
-            } else { // SHORT
-                if (stopLossPercent > 0 && candle.high >= slPrice) {
-                    shouldExit = true;
-                    reason = 'STOP_LOSS';
-                    exitPrice = Math.max(slPrice, candle.open);
-                } else if (takeProfitPercent > 0 && candle.low <= tpPrice) {
-                    shouldExit = true;
-                    reason = 'TAKE_PROFIT';
-                    exitPrice = Math.min(tpPrice, candle.open);
+            }
+
+            let exitPrice = 0;
+            let reason: TradeCloseReason | null = null;
+            let isLiquidation = false;
+
+            // 1a. Check for Liquidation first if leverage is used
+            if (leverage > 1) {
+                if (position.direction === 'LONG') {
+                    const liquidationPrice = position.entryPrice * (1 - (1 / leverage));
+                    if (candle.low <= liquidationPrice) {
+                        isLiquidation = true;
+                        reason = 'LIQUIDATION';
+                        exitPrice = Math.min(liquidationPrice, candle.open);
+                    }
+                } else { // SHORT
+                    const liquidationPrice = position.entryPrice * (1 + (1 / leverage));
+                    if (candle.high >= liquidationPrice) {
+                        isLiquidation = true;
+                        reason = 'LIQUIDATION';
+                        exitPrice = Math.max(liquidationPrice, candle.open);
+                    }
                 }
             }
             
-            if (shouldExit) {
-                const grossPnl = position === 'LONG'
-                    ? (exitPrice - entryPrice) * positionSize
-                    : (entryPrice - exitPrice) * positionSize;
-                
-                const commission = (entryPrice * positionSize + exitPrice * positionSize) * commissionRate;
-                const netPnl = grossPnl - commission;
+            // 1b. If not liquidated, check for Stop Loss or Take Profit
+            if (!reason) {
+                if (position.direction === 'LONG') {
+                    if (stopLossPercent > 0 && candle.low <= position.slPrice) {
+                        reason = 'STOP_LOSS';
+                        exitPrice = Math.min(position.slPrice, candle.open);
+                    } else if (takeProfitPercent > 0 && candle.high >= position.tpPrice) {
+                        reason = 'TAKE_PROFIT';
+                        exitPrice = Math.max(position.tpPrice, candle.open);
+                    }
+                } else { // SHORT
+                    if (stopLossPercent > 0 && candle.high >= position.slPrice) {
+                        reason = 'STOP_LOSS';
+                        exitPrice = Math.max(position.slPrice, candle.open);
+                    } else if (takeProfitPercent > 0 && candle.low <= position.tpPrice) {
+                        reason = 'TAKE_PROFIT';
+                        exitPrice = Math.min(position.tpPrice, candle.open);
+                    }
+                }
+            }
+
+            // 1c. Check for a stronger reverse signal
+            if (!reason && pattern && isSignalValid(pattern, candle, i)) {
+                const isConflicting =
+                    (position.direction === 'LONG' && pattern.direction === SignalDirection.Bearish) ||
+                    (position.direction === 'SHORT' && pattern.direction === SignalDirection.Bullish);
+
+                if (isConflicting && pattern.priority > position.entrySignal.priority) {
+                    reason = 'REVERSE_SIGNAL';
+                    exitPrice = candle.close;
+                }
+            }
+
+            // 1d. Process Exit if a reason was found
+            if (reason) {
+                let grossPnl: number;
+                let commission: number;
+                let netPnl: number;
+                const oldPosition = position;
+
+                if (isLiquidation) {
+                    const positionValue = oldPosition.entryPrice * oldPosition.size;
+                    const margin = positionValue / leverage;
+                    netPnl = -margin;
+                    grossPnl = oldPosition.direction === 'LONG'
+                        ? (exitPrice - oldPosition.entryPrice) * oldPosition.size
+                        : (oldPosition.entryPrice - exitPrice) * oldPosition.size;
+                    commission = (oldPosition.entryPrice * oldPosition.size + exitPrice * oldPosition.size) * commissionRate;
+                } else {
+                    grossPnl = oldPosition.direction === 'LONG'
+                        ? (exitPrice - oldPosition.entryPrice) * oldPosition.size
+                        : (oldPosition.entryPrice - exitPrice) * oldPosition.size;
+                    
+                    commission = (oldPosition.entryPrice * oldPosition.size + exitPrice * oldPosition.size) * commissionRate;
+                    netPnl = grossPnl - commission;
+                }
+
                 capital += netPnl;
                 totalTrades++;
                 if (netPnl > 0) winningTrades++;
                 
                 if (grossPnl > 0) totalGrossProfit += grossPnl;
                 else totalGrossLoss += grossPnl;
-                
-                totalTradeDurationInBars += (i - tradeEntryIndex);
 
-                const closeLog: TradeLogEvent = position === 'LONG' 
-                  ? { type: 'CLOSE_LONG', time: candle.time, price: exitPrice, grossPnl, commission, netPnl, reason }
-                  : { type: 'CLOSE_SHORT', time: candle.time, price: exitPrice, grossPnl, commission, netPnl, reason };
+                const duration = i - oldPosition.entryIndex;
+                totalTradeDurationInBars += duration;
+
+                const closeLog: TradeLogEvent = oldPosition.direction === 'LONG' 
+                  ? { type: 'CLOSE_LONG', time: candle.time, price: exitPrice, grossPnl, commission, netPnl, reason, entryPrice: oldPosition.entryPrice, size: oldPosition.size, duration, capital }
+                  : { type: 'CLOSE_SHORT', time: candle.time, price: exitPrice, grossPnl, commission, netPnl, reason, entryPrice: oldPosition.entryPrice, size: oldPosition.size, duration, capital };
                 log.push(closeLog);
                 equityCurve.push({ time: candle.time, capital });
+                
+                position = null; // Position is now closed
+                processedActionOnCandle = true;
 
-                position = null;
-                entryPrice = 0;
-                positionSize = 0;
+                // 1e. If it was a reverse signal, immediately open a new position (Stop and Reverse)
+                if (reason === 'REVERSE_SIGNAL' && capital > 0 && pattern) {
+                    const entryPrice = candle.close;
+                    const capitalBeforeTrade = capital;
+                    let size: number;
+                    
+                    if (useAtrPositionSizing) {
+                        const atr = atrValues[i];
+                        if (atr) {
+                            const stopLossDistance = atr * atrMultiplierSL;
+                            const riskAmount = capital * (riskPerTradePercent / 100);
+                            const positionValue = (riskAmount / stopLossDistance) * entryPrice;
+                            size = positionValue / entryPrice;
+                        } else {
+                            const positionValue = (capital * (positionSizePercent / 100)) * leverage;
+                            size = positionValue / entryPrice;
+                        }
+                    } else {
+                        const positionValue = (capital * (positionSizePercent / 100)) * leverage;
+                        size = positionValue / entryPrice;
+                    }
+                     const positionValue = size * entryPrice;
+                     const signalName = t(pattern.name);
 
-                if (capital <= 0) {
-                    break; 
+                    let slPrice: number, tpPrice: number;
+                    if (strategy === 'ATR_TRAILING_STOP') {
+                        const atr = atrValues[i];
+                        if (atr) {
+                             if (pattern.direction === SignalDirection.Bullish) {
+                                slPrice = entryPrice - atr * atrMultiplierSL;
+                                tpPrice = entryPrice + atr * atrMultiplierTP;
+                            } else { // Bearish
+                                slPrice = entryPrice + atr * atrMultiplierSL;
+                                tpPrice = entryPrice - atr * atrMultiplierTP;
+                            }
+                        } else { // Fallback
+                            slPrice = entryPrice * (1 - (pattern.direction === SignalDirection.Bullish ? stopLossPercent / 100 : -stopLossPercent / 100));
+                            tpPrice = entryPrice * (1 + (pattern.direction === SignalDirection.Bullish ? takeProfitPercent / 100 : -takeProfitPercent / 100));
+                        }
+                    } else { // Percentage-based
+                        if (pattern.direction === SignalDirection.Bullish) {
+                            slPrice = entryPrice * (1 - stopLossPercent / 100);
+                            tpPrice = entryPrice * (1 + takeProfitPercent / 100);
+                        } else { // Bearish
+                            slPrice = entryPrice * (1 + stopLossPercent / 100);
+                            tpPrice = entryPrice * (1 - takeProfitPercent / 100);
+                        }
+                    }
+
+                    if (pattern.direction === SignalDirection.Bullish) {
+                        position = { direction: 'LONG', entryPrice, size, slPrice, tpPrice, entrySignal: pattern, entryIndex: i };
+                        log.push({ type: 'ENTER_LONG', time: candle.time, price: entryPrice, signal: signalName, size, value: positionValue, capital: capitalBeforeTrade });
+                    } else {
+                        position = { direction: 'SHORT', entryPrice, size, slPrice, tpPrice, entrySignal: pattern, entryIndex: i };
+                        log.push({ type: 'ENTER_SHORT', time: candle.time, price: entryPrice, signal: signalName, size, value: positionValue, capital: capitalBeforeTrade });
+                    }
+                }
+                 if (capital <= 0) break; // Bankrupt
+            }
+        }
+        
+        // --- 2. HANDLE ENTRY FROM FLAT STATE ---
+        if (!position && !processedActionOnCandle && capital > 0 && pattern && isSignalValid(pattern, candle, i)) {
+            const entryPrice = candle.close;
+            const capitalBeforeTrade = capital;
+            let size: number;
+            
+            if (useAtrPositionSizing) {
+                const atr = atrValues[i];
+                if (atr && atr > 0) {
+                    const stopLossDistance = atr * atrMultiplierSL;
+                    const riskAmount = capital * (riskPerTradePercent / 100);
+                    // size in quote asset / entry price = size in base asset
+                    size = (riskAmount / stopLossDistance);
+                } else { // Fallback if ATR is not available
+                    const positionValue = (capital * (positionSizePercent / 100)) * leverage;
+                    size = positionValue / entryPrice;
                 }
             } else {
-                // Position is still open, log unrealized P&L
-                const currentPrice = candle.close;
-                const unrealizedPnl = position === 'LONG'
-                    ? (currentPrice - entryPrice) * positionSize
-                    : (entryPrice - currentPrice) * positionSize;
-                
-                const currentEquity = capital + unrealizedPnl;
-                
-                log.push({
-                    type: 'UPDATE_PNL',
-                    time: candle.time,
-                    price: currentPrice,
-                    unrealizedPnl: unrealizedPnl,
-                    equity: currentEquity,
-                });
-                equityCurve.push({ time: candle.time, capital: currentEquity });
+                const positionValue = (capital * (positionSizePercent / 100)) * leverage;
+                size = positionValue / entryPrice;
+            }
+            const positionValue = size * entryPrice;
+            const signalName = t(pattern.name);
+            
+            let slPrice: number, tpPrice: number;
+             if (strategy === 'ATR_TRAILING_STOP') {
+                const atr = atrValues[i];
+                if (atr) {
+                    if (pattern.direction === SignalDirection.Bullish) {
+                        slPrice = entryPrice - atr * atrMultiplierSL;
+                        tpPrice = entryPrice + atr * atrMultiplierTP;
+                    } else { // Bearish
+                        slPrice = entryPrice + atr * atrMultiplierSL;
+                        tpPrice = entryPrice - atr * atrMultiplierTP;
+                    }
+                } else { // Fallback
+                    slPrice = entryPrice * (1 - (pattern.direction === SignalDirection.Bullish ? stopLossPercent / 100 : -stopLossPercent / 100));
+                    tpPrice = entryPrice * (1 + (pattern.direction === SignalDirection.Bullish ? takeProfitPercent / 100 : -takeProfitPercent / 100));
+                }
+            } else { // Percentage-based
+                if (pattern.direction === SignalDirection.Bullish) {
+                    slPrice = entryPrice * (1 - stopLossPercent / 100);
+                    tpPrice = entryPrice * (1 + takeProfitPercent / 100);
+                } else { // Bearish
+                    slPrice = entryPrice * (1 + stopLossPercent / 100);
+                    tpPrice = entryPrice * (1 - takeProfitPercent / 100);
+                }
+            }
+            
+            if (pattern.direction === SignalDirection.Bullish) {
+                position = { direction: 'LONG', entryPrice, size, slPrice, tpPrice, entrySignal: pattern, entryIndex: i };
+                log.push({ type: 'ENTER_LONG', time: candle.time, price: entryPrice, signal: signalName, size, value: positionValue, capital: capitalBeforeTrade });
+            } else {
+                position = { direction: 'SHORT', entryPrice, size, slPrice, tpPrice, entrySignal: pattern, entryIndex: i };
+                log.push({ type: 'ENTER_SHORT', time: candle.time, price: entryPrice, signal: signalName, size, value: positionValue, capital: capitalBeforeTrade });
             }
         }
 
-        // 2. Check for entries (only if flat)
-        if (position === null && capital > 0) {
-            const pattern = patternMap.get(i);
-            if (pattern) {
-                let entryConditionMet = false;
-                
-                if (useVolumeFilter) {
-                    const avgVolume = volumeMA[i];
-                    if (avgVolume === null || candle.volume <= avgVolume * volumeThreshold) {
-                        continue;
-                    }
-                }
-
-                switch (strategy) {
-                    case 'SIGNAL_ONLY':
-                        entryConditionMet = true;
-                        break;
-                    case 'RSI_FILTER':
-                        const rsi = rsiValues[i];
-                        if (rsi !== null) {
-                            if (pattern.direction === SignalDirection.Bullish && rsi <= rsiOversold) entryConditionMet = true;
-                            else if (pattern.direction === SignalDirection.Bearish && rsi >= rsiOverbought) entryConditionMet = true;
-                        }
-                        break;
-                    case 'BOLLINGER_BANDS':
-                         const bands = bbValues[i];
-                         if (bands !== null) {
-                            if (pattern.direction === SignalDirection.Bullish && candle.low <= bands.lower) entryConditionMet = true;
-                            else if (pattern.direction === SignalDirection.Bearish && candle.high >= bands.upper) entryConditionMet = true;
-                         }
-                        break;
-                }
-
-                if (entryConditionMet) {
-                    entryPrice = candle.close;
-                    const positionValue = capital * leverage;
-                    positionSize = positionValue / entryPrice;
-                    const signalName = t(pattern.name);
-                    tradeEntryIndex = i;
-
-                    if (pattern.direction === SignalDirection.Bullish) {
-                        position = 'LONG';
-                        slPrice = entryPrice * (1 - stopLossPercent / 100);
-                        tpPrice = entryPrice * (1 + takeProfitPercent / 100);
-                        log.push({ type: 'ENTER_LONG', time: candle.time, price: entryPrice, signal: signalName });
-                    } else { // Bearish
-                        position = 'SHORT';
-                        slPrice = entryPrice * (1 + stopLossPercent / 100);
-                        tpPrice = entryPrice * (1 - takeProfitPercent / 100);
-                        log.push({ type: 'ENTER_SHORT', time: candle.time, price: entryPrice, signal: signalName });
-                    }
-                }
-            }
+        // --- 3. UPDATE EQUITY CURVE FOR OPEN POSITIONS ---
+        if (position) {
+            const currentPrice = candle.close;
+            const unrealizedPnl = position.direction === 'LONG'
+                ? (currentPrice - position.entryPrice) * position.size
+                : (position.entryPrice - currentPrice) * position.size;
+            
+            const currentEquity = capital + unrealizedPnl;
+            
+            log.push({
+                type: 'UPDATE_PNL',
+                time: candle.time,
+                price: currentPrice,
+                unrealizedPnl,
+                equity: currentEquity,
+            });
+            equityCurve.push({ time: candle.time, capital: currentEquity });
         }
     }
     
-    // 3. Close any open position at the end of data
+    // --- 4. CLOSE ANY OPEN POSITION AT THE END OF DATA ---
     if (position !== null) {
         const lastCandle = candles[candles.length - 1];
         const lastPrice = lastCandle.close;
-        const grossPnl = position === 'LONG'
-            ? (lastPrice - entryPrice) * positionSize
-            : (entryPrice - lastPrice) * positionSize;
+        const grossPnl = position.direction === 'LONG'
+            ? (lastPrice - position.entryPrice) * position.size
+            : (position.entryPrice - lastPrice) * position.size;
         
-        const commission = (entryPrice * positionSize + lastPrice * positionSize) * commissionRate;
+        const commission = (position.entryPrice * position.size + lastPrice * position.size) * commissionRate;
         const netPnl = grossPnl - commission;
         capital += netPnl;
         totalTrades++;
@@ -331,25 +530,25 @@ export const runBacktest = (
         if (grossPnl > 0) totalGrossProfit += grossPnl;
         else totalGrossLoss += grossPnl;
 
-        totalTradeDurationInBars += (candles.length - 1 - tradeEntryIndex);
+        const duration = (candles.length - 1 - position.entryIndex);
+        totalTradeDurationInBars += duration;
         
-        const endLog: TradeLogEvent = position === 'LONG'
-            ? { type: 'CLOSE_LONG', time: lastCandle.time, price: lastPrice, grossPnl, commission, netPnl, reason: 'END_OF_DATA' }
-            : { type: 'CLOSE_SHORT', time: lastCandle.time, price: lastPrice, grossPnl, commission, netPnl, reason: 'END_OF_DATA' };
+        const endLog: TradeLogEvent = position.direction === 'LONG'
+            ? { type: 'CLOSE_LONG', time: lastCandle.time, price: lastPrice, grossPnl, commission, netPnl, reason: 'END_OF_DATA', entryPrice: position.entryPrice, size: position.size, duration, capital }
+            : { type: 'CLOSE_SHORT', time: lastCandle.time, price: lastPrice, grossPnl, commission, netPnl, reason: 'END_OF_DATA', entryPrice: position.entryPrice, size: position.size, duration, capital };
         log.push(endLog);
         equityCurve.push({ time: lastCandle.time, capital });
     }
 
     capital = Math.max(0, capital); // Ensure capital doesn't go negative in final result
     
-    // Calculate final metrics
+    // --- 5. CALCULATE FINAL METRICS ---
     const pnl = capital - initialCapital;
     const pnlPercentage = (pnl / initialCapital) * 100;
     const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
     const profitFactor = totalGrossLoss !== 0 ? totalGrossProfit / Math.abs(totalGrossLoss) : Infinity;
     const avgTradeDurationBars = totalTrades > 0 ? totalTradeDurationInBars / totalTrades : 0;
 
-    // Calculate Max Drawdown from the equity curve
     let peakEquityForDrawdown = initialCapital;
     let maxDrawdown = 0;
     for (const point of equityCurve) {

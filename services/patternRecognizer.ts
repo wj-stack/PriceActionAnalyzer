@@ -1,4 +1,5 @@
 
+
 import type { Candle, DetectedPattern } from '../types';
 import { PatternType, SignalDirection } from '../types';
 
@@ -109,7 +110,7 @@ const reversalDetectors: PatternDetector[] = [
         const current = candles[i];
         const prev = candles[i-1];
         if (isHammer(current, prev, i, candles)) {
-            return { index: i, candle: current, name: 'hammer', type: PatternType.Reversal, direction: SignalDirection.Bullish, description: 'hammerDesc' };
+            return { index: i, candle: current, name: 'hammer', type: PatternType.Reversal, direction: SignalDirection.Bullish, description: 'hammerDesc', priority: 3 };
         }
         return null;
     },
@@ -117,7 +118,7 @@ const reversalDetectors: PatternDetector[] = [
         const current = candles[i];
         const prev = candles[i-1];
         if (isShootingStar(current, prev, i, candles)) {
-            return { index: i, candle: current, name: 'shootingStar', type: PatternType.Reversal, direction: SignalDirection.Bearish, description: 'shootingStarDesc' };
+            return { index: i, candle: current, name: 'shootingStar', type: PatternType.Reversal, direction: SignalDirection.Bearish, description: 'shootingStarDesc', priority: 3 };
         }
         return null;
     },
@@ -126,7 +127,7 @@ const reversalDetectors: PatternDetector[] = [
         const prev = candles[i-1];
         const { swingLow } = findSwingPoints(candles, i, 15);
         if (current.low <= swingLow && isBullishEngulfing(current, prev)) {
-             return { index: i, candle: current, name: 'bullishEngulfing', type: PatternType.Reversal, direction: SignalDirection.Bullish, description: 'bullishEngulfingDesc' };
+             return { index: i, candle: current, name: 'bullishEngulfing', type: PatternType.Reversal, direction: SignalDirection.Bullish, description: 'bullishEngulfingDesc', priority: 3 };
         }
         return null;
     },
@@ -135,14 +136,14 @@ const reversalDetectors: PatternDetector[] = [
         const prev = candles[i-1];
         const { swingHigh } = findSwingPoints(candles, i, 15);
         if (current.high >= swingHigh && isBearishEngulfing(current, prev)) {
-             return { index: i, candle: current, name: 'bearishEngulfing', type: PatternType.Reversal, direction: SignalDirection.Bearish, description: 'bearishEngulfingDesc' };
+             return { index: i, candle: current, name: 'bearishEngulfing', type: PatternType.Reversal, direction: SignalDirection.Bearish, description: 'bearishEngulfingDesc', priority: 3 };
         }
         return null;
     },
      (candles, i) => {
         const current = candles[i];
          if (isDoji(current)) {
-            return { index: i, candle: current, name: 'doji', type: PatternType.Reversal, direction: current.isBullish ? SignalDirection.Bullish : SignalDirection.Bearish, description: 'dojiDesc' };
+            return { index: i, candle: current, name: 'doji', type: PatternType.Reversal, direction: current.isBullish ? SignalDirection.Bullish : SignalDirection.Bearish, description: 'dojiDesc', priority: 1 };
         }
         return null;
     },
@@ -150,7 +151,7 @@ const reversalDetectors: PatternDetector[] = [
         const current = candles[i];
         const prev = candles[i-1];
         if (isBullishHarami(current, prev)) {
-            return { index: i, candle: current, name: 'bullishHarami', type: PatternType.Reversal, direction: SignalDirection.Bullish, description: 'bullishHaramiDesc' };
+            return { index: i, candle: current, name: 'bullishHarami', type: PatternType.Reversal, direction: SignalDirection.Bullish, description: 'bullishHaramiDesc', priority: 1 };
         }
         return null;
     },
@@ -158,7 +159,7 @@ const reversalDetectors: PatternDetector[] = [
         const current = candles[i];
         const prev = candles[i-1];
         if (isBearishHarami(current, prev)) {
-            return { index: i, candle: current, name: 'bearishHarami', type: PatternType.Reversal, direction: SignalDirection.Bearish, description: 'bearishHaramiDesc' };
+            return { index: i, candle: current, name: 'bearishHarami', type: PatternType.Reversal, direction: SignalDirection.Bearish, description: 'bearishHaramiDesc', priority: 1 };
         }
         return null;
     },
@@ -167,9 +168,9 @@ const reversalDetectors: PatternDetector[] = [
         const prev = candles[i-1];
         if (current.high > prev.high && current.low < prev.low) {
             if (current.isBullish) {
-                return { index: i, candle: current, name: 'bullishOutsideBar', type: PatternType.Reversal, direction: SignalDirection.Bullish, description: 'bullishOutsideBarDesc' };
+                return { index: i, candle: current, name: 'bullishOutsideBar', type: PatternType.Reversal, direction: SignalDirection.Bullish, description: 'bullishOutsideBarDesc', priority: 2 };
             } else {
-                return { index: i, candle: current, name: 'bearishOutsideBar', type: PatternType.Reversal, direction: SignalDirection.Bearish, description: 'bearishOutsideBarDesc' };
+                return { index: i, candle: current, name: 'bearishOutsideBar', type: PatternType.Reversal, direction: SignalDirection.Bearish, description: 'bearishOutsideBarDesc', priority: 2 };
             }
         }
         return null;
@@ -187,7 +188,7 @@ const trendDetectors: PatternDetector[] = [
         if (isAboveEma && emaSlope === 'up') {
             const { swingHigh } = findSwingPoints(candles, i, 10);
             if (swingHigh > 0 && current.close > swingHigh && prev.close < swingHigh) {
-                 return { index: i, candle: current, name: 'bullishBreakout', type: PatternType.Trend, direction: SignalDirection.Bullish, description: 'bullishBreakoutDesc' };
+                 return { index: i, candle: current, name: 'bullishBreakout', type: PatternType.Trend, direction: SignalDirection.Bullish, description: 'bullishBreakoutDesc', priority: 2 };
             }
         }
         return null;
@@ -202,7 +203,7 @@ const trendDetectors: PatternDetector[] = [
         if (isBelowEma && emaSlope === 'down') {
             const { swingLow } = findSwingPoints(candles, i, 10);
             if (swingLow < Infinity && current.close < swingLow && prev.close > swingLow) {
-                 return { index: i, candle: current, name: 'bearishBreakout', type: PatternType.Trend, direction: SignalDirection.Bearish, description: 'bearishBreakoutDesc' };
+                 return { index: i, candle: current, name: 'bearishBreakout', type: PatternType.Trend, direction: SignalDirection.Bearish, description: 'bearishBreakoutDesc', priority: 2 };
             }
         }
         return null;
@@ -213,7 +214,7 @@ const trendDetectors: PatternDetector[] = [
         if (!ema || !ema20[i-1]) return null;
         const emaSlope = ema > ema20[i - 1]! ? 'up' : 'down';
         if (current.close > ema && emaSlope === 'up' && current.low <= ema && candles[i-1].low > ema && current.isBullish) {
-            return { index: i, candle: current, name: 'emaPullbackBull', type: PatternType.Trend, direction: SignalDirection.Bullish, description: 'emaPullbackBullDesc' };
+            return { index: i, candle: current, name: 'emaPullbackBull', type: PatternType.Trend, direction: SignalDirection.Bullish, description: 'emaPullbackBullDesc', priority: 1 };
         }
         return null;
     },
@@ -223,7 +224,7 @@ const trendDetectors: PatternDetector[] = [
         if (!ema || !ema20[i-1]) return null;
         const emaSlope = ema > ema20[i - 1]! ? 'up' : 'down';
         if (current.close < ema && emaSlope === 'down' && current.high >= ema && candles[i-1].high < ema && !current.isBullish) {
-            return { index: i, candle: current, name: 'emaPullbackBear', type: PatternType.Trend, direction: SignalDirection.Bearish, description: 'emaPullbackBearDesc' };
+            return { index: i, candle: current, name: 'emaPullbackBear', type: PatternType.Trend, direction: SignalDirection.Bearish, description: 'emaPullbackBearDesc', priority: 1 };
         }
         return null;
     },
@@ -243,7 +244,7 @@ const trendDetectors: PatternDetector[] = [
             c2.open > c1.open && c2.open < c1.close && // c2 opens in c1 body
             c3.open > c2.open && c3.open < c2.close    // c3 opens in c2 body
         ) {
-            return { index: i, candle: c3, name: 'threeSoldiers', type: PatternType.Trend, direction: SignalDirection.Bullish, description: 'threeSoldiersDesc' };
+            return { index: i, candle: c3, name: 'threeSoldiers', type: PatternType.Trend, direction: SignalDirection.Bullish, description: 'threeSoldiersDesc', priority: 2 };
         }
         return null;
     },
@@ -263,7 +264,7 @@ const trendDetectors: PatternDetector[] = [
             c2.open < c1.open && c2.open > c1.close && // c2 opens in c1 body
             c3.open < c2.open && c3.open > c2.close    // c3 opens in c2 body
         ) {
-            return { index: i, candle: c3, name: 'threeCrows', type: PatternType.Trend, direction: SignalDirection.Bearish, description: 'threeCrowsDesc' };
+            return { index: i, candle: c3, name: 'threeCrows', type: PatternType.Trend, direction: SignalDirection.Bearish, description: 'threeCrowsDesc', priority: 2 };
         }
         return null;
     },
@@ -279,7 +280,7 @@ const rangeDetectors: PatternDetector[] = [
         if (isRanging) {
             const { swingHigh } = findSwingPoints(candles, i, 20);
             if (swingHigh > 0 && prev.high > swingHigh && current.close < swingHigh && !current.isBullish) {
-                 return { index: i, candle: current, name: 'failedBullishBreakout', type: PatternType.Range, direction: SignalDirection.Bearish, description: 'failedBullishBreakoutDesc' };
+                 return { index: i, candle: current, name: 'failedBullishBreakout', type: PatternType.Range, direction: SignalDirection.Bearish, description: 'failedBullishBreakoutDesc', priority: 1 };
             }
         }
         return null;
@@ -293,7 +294,7 @@ const rangeDetectors: PatternDetector[] = [
         if (isRanging) {
             const { swingLow } = findSwingPoints(candles, i, 20);
             if (swingLow < Infinity && prev.low < swingLow && current.close > swingLow && current.isBullish) {
-                 return { index: i, candle: current, name: 'failedBearishBreakout', type: PatternType.Range, direction: SignalDirection.Bullish, description: 'failedBearishBreakoutDesc' };
+                 return { index: i, candle: current, name: 'failedBearishBreakout', type: PatternType.Range, direction: SignalDirection.Bullish, description: 'failedBearishBreakoutDesc', priority: 1 };
             }
         }
         return null;

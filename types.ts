@@ -45,9 +45,10 @@ export interface DetectedPattern {
   type: PatternType;
   direction: SignalDirection;
   description: string;
+  priority: number;
 }
 
-export type BacktestStrategy = 'SIGNAL_ONLY' | 'RSI_FILTER' | 'BOLLINGER_BANDS';
+export type BacktestStrategy = 'SIGNAL_ONLY' | 'RSI_FILTER' | 'BOLLINGER_BANDS' | 'ATR_TRAILING_STOP';
 
 export interface BacktestSettings {
     initialCapital: number;
@@ -56,6 +57,7 @@ export interface BacktestSettings {
     takeProfit: number;
     strategy: BacktestStrategy;
     leverage: number;
+    positionSizePercent: number;
     rsiPeriod?: number;
     rsiOversold?: number;
     rsiOverbought?: number;
@@ -64,6 +66,11 @@ export interface BacktestSettings {
     useVolumeFilter?: boolean;
     volumeMaPeriod?: number;
     volumeThreshold?: number;
+    atrPeriod?: number;
+    atrMultiplierSL?: number;
+    atrMultiplierTP?: number;
+    useAtrPositionSizing?: boolean;
+    riskPerTradePercent?: number;
 }
 
 // FIX: Add missing AlphaToken type to resolve an import error in TokenListModal.tsx
@@ -158,3 +165,4 @@ export interface EquityDataPoint {
   time: number;
   equity: number;
 }
+export type TradeCloseReason = 'STOP_LOSS' | 'TAKE_PROFIT' | 'END_OF_DATA' | 'REVERSE_SIGNAL' | 'LIQUIDATION';

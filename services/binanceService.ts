@@ -1,5 +1,3 @@
-
-
 import type { BinanceKline, Candle } from '../types';
 
 const API_BASE_URL = 'https://api.binance.com/api/v3/klines';
@@ -225,7 +223,7 @@ export const fetchKlines = async (symbol: string, interval: string, limit: numbe
 export const subscribeToKlineStream = (
     symbol: string,
     interval: string,
-    onMessageCallback: (candle: Candle) => void
+    onMessageCallback: (candle: Candle, streamSymbol: string) => void
 ): (() => void) => {
     const ws = new WebSocket(`${WEBSOCKET_BASE_URL}/${symbol.toLowerCase()}@kline_${interval}`);
 
@@ -233,7 +231,7 @@ export const subscribeToKlineStream = (
         const message = JSON.parse(event.data);
         if (message.k) { // 'k' is the key for kline data in the message
             const candle = mapBinanceWsKlineToCandle(message.k);
-            onMessageCallback(candle);
+            onMessageCallback(candle, message.s);
         }
     };
 

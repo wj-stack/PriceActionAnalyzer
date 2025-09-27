@@ -1,7 +1,3 @@
-
-
-
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PriceChart } from './components/PriceChart';
@@ -62,10 +58,13 @@ const App: React.FC = () => {
 
     // Backtest State
     const [isBacktestModalOpen, setIsBacktestModalOpen] = useState<boolean>(false);
+    const [isBacktestRunning, setIsBacktestRunning] = useState<boolean>(false);
     const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
+    const [initialCapital, setInitialCapital] = useState<number>(BACKTEST_INITIAL_CAPITAL);
     const [stopLoss, setStopLoss] = useState<number>(2);
     const [takeProfit, setTakeProfit] = useState<number>(4);
     const [leverage, setLeverage] = useState<number>(1);
+    const [positionSizePercent, setPositionSizePercent] = useState<number>(10);
     const [backtestStrategy, setBacktestStrategy] = useState<BacktestStrategy>('SIGNAL_ONLY');
     const [rsiPeriod, setRsiPeriod] = useState<number>(14);
     const [rsiOversold, setRsiOversold] = useState<number>(30);
@@ -75,6 +74,11 @@ const App: React.FC = () => {
     const [useVolumeFilter, setUseVolumeFilter] = useState<boolean>(false);
     const [volumeMaPeriod, setVolumeMaPeriod] = useState<number>(20);
     const [volumeThreshold, setVolumeThreshold] = useState<number>(1.5);
+    const [atrPeriod, setAtrPeriod] = useState<number>(14);
+    const [atrMultiplierSL, setAtrMultiplierSL] = useState<number>(2);
+    const [atrMultiplierTP, setAtrMultiplierTP] = useState<number>(3);
+    const [useAtrPositionSizing, setUseAtrPositionSizing] = useState<boolean>(false);
+    const [riskPerTradePercent, setRiskPerTradePercent] = useState<number>(1);
 
     // Price Alert State
     const [alerts, setAlerts] = useState<Record<string, PriceAlert[]>>({});
@@ -82,7 +86,12 @@ const App: React.FC = () => {
     // WebSocket and Data Caching Refs
     const wsCleanupRef = useRef<(() => void) | null>(null);
     const klineCacheRef = useRef<Map<string, Candle[]>>(new Map());
+    const symbolRef = useRef(symbol);
     const [refreshCount, setRefreshCount] = useState(0);
+
+    useEffect(() => {
+        symbolRef.current = symbol;
+    }, [symbol]);
 
     
     useEffect(() => {
@@ -109,7 +118,11 @@ const App: React.FC = () => {
         }
     }, []);
 
-    const handleWsUpdate = useCallback((newCandle: Candle) => {
+    const handleWsUpdate = useCallback((newCandle: Candle, streamSymbol: string) => {
+        if (streamSymbol.toUpperCase() !== symbolRef.current.toUpperCase()) {
+            return; // Ignore updates from stale WebSockets for other symbols
+        }
+
         setCandles(prevCandles => {
             const lastCandle = prevCandles.length > 0 ? prevCandles[prevCandles.length - 1] : null;
             let updatedCandles;
@@ -143,6 +156,15 @@ const App: React.FC = () => {
             wsCleanupRef.current = null;
             return; // Abort fetch
         }
+        
+        // Clear previous state when symbol or timeframe changes to prevent showing stale data.
+        setCandles([]);
+        setPatterns([]);
+        setBacktestResult(null);
+        setIsModalOpen(false);
+        setIsBacktestModalOpen(false);
+        setIsPatternDetailModalOpen(false);
+        setIsDecisionMakerModalOpen(false);
 
         wsCleanupRef.current?.();
         wsCleanupRef.current = null;
@@ -273,17 +295,17 @@ const App: React.FC = () => {
         setIsPatternDetailModalOpen(true);
     }, []);
 
-    const handleRunBacktest = useCallback(() => {
-        if (candles.length === 0) return;
-        const result = runBacktest(
+    const runBacktestInternal = useCallback(() => {
+         return runBacktest(
             candles,
             displayedPatterns,
             {
-                initialCapital: BACKTEST_INITIAL_CAPITAL,
+                initialCapital: initialCapital,
                 commissionRate: BACKTEST_COMMISSION_RATE,
                 stopLoss: stopLoss,
                 takeProfit: takeProfit,
                 leverage: leverage,
+                positionSizePercent: positionSizePercent,
                 strategy: backtestStrategy,
                 rsiPeriod,
                 rsiOversold,
@@ -293,12 +315,37 @@ const App: React.FC = () => {
                 useVolumeFilter,
                 volumeMaPeriod,
                 volumeThreshold,
+                atrPeriod,
+                atrMultiplierSL,
+                atrMultiplierTP,
+                useAtrPositionSizing,
+                riskPerTradePercent,
             },
             t
         );
-        setBacktestResult(result);
-        setIsBacktestModalOpen(true);
-    }, [candles, displayedPatterns, stopLoss, takeProfit, leverage, backtestStrategy, rsiPeriod, rsiOversold, rsiOverbought, bbPeriod, bbStdDev, useVolumeFilter, volumeMaPeriod, volumeThreshold, t]);
+    }, [candles, displayedPatterns, stopLoss, takeProfit, leverage, positionSizePercent, backtestStrategy, rsiPeriod, rsiOversold, rsiOverbought, bbPeriod, bbStdDev, useVolumeFilter, volumeMaPeriod, volumeThreshold, t, initialCapital, atrPeriod, atrMultiplierSL, atrMultiplierTP, useAtrPositionSizing, riskPerTradePercent]);
+
+    const handleRunBacktest = useCallback(() => {
+        if (candles.length === 0) return;
+        setIsBacktestRunning(true);
+        setTimeout(() => {
+            const result = runBacktestInternal();
+            setBacktestResult(result);
+            setIsBacktestModalOpen(true);
+            setIsBacktestRunning(false);
+        }, 50);
+    }, [candles, runBacktestInternal]);
+    
+    const handleRerunBacktest = useCallback(() => {
+        if (candles.length === 0) return;
+        setIsBacktestRunning(true);
+        setTimeout(() => {
+            const result = runBacktestInternal();
+            setBacktestResult(result);
+            setIsBacktestRunning(false);
+        }, 50);
+    }, [candles, runBacktestInternal]);
+
 
     const onRefresh = useCallback(() => setRefreshCount(c => c + 1), []);
     const onOpenDecisionMakerModal = useCallback(() => setIsDecisionMakerModalOpen(true), []);
@@ -329,30 +376,6 @@ const App: React.FC = () => {
                         setSelectedPatterns={setSelectedPatterns}
                         onRunBacktest={handleRunBacktest}
                         onOpenDecisionMakerModal={onOpenDecisionMakerModal}
-                        stopLoss={stopLoss}
-                        setStopLoss={setStopLoss}
-                        takeProfit={takeProfit}
-                        setTakeProfit={setTakeProfit}
-                        leverage={leverage}
-                        setLeverage={setLeverage}
-                        backtestStrategy={backtestStrategy}
-                        setBacktestStrategy={setBacktestStrategy}
-                        rsiPeriod={rsiPeriod}
-                        setRsiPeriod={setRsiPeriod}
-                        rsiOversold={rsiOversold}
-                        setRsiOversold={setRsiOversold}
-                        rsiOverbought={rsiOverbought}
-                        setRsiOverbought={setRsiOverbought}
-                        bbPeriod={bbPeriod}
-                        setBbPeriod={setBbPeriod}
-                        bbStdDev={bbStdDev}
-                        setBbStdDev={setBbStdDev}
-                        useVolumeFilter={useVolumeFilter}
-                        setUseVolumeFilter={setUseVolumeFilter}
-                        volumeMaPeriod={volumeMaPeriod}
-                        setVolumeMaPeriod={setVolumeMaPeriod}
-                        volumeThreshold={volumeThreshold}
-                        setVolumeThreshold={setVolumeThreshold}
                         alerts={alerts}
                         addAlert={addAlert}
                         removeAlert={removeAlert}
@@ -405,6 +428,46 @@ const App: React.FC = () => {
                     isOpen={isBacktestModalOpen}
                     onClose={() => setIsBacktestModalOpen(false)}
                     result={backtestResult}
+                    isBacktestRunning={isBacktestRunning}
+                    onRerun={handleRerunBacktest}
+                    initialCapital={initialCapital}
+                    setInitialCapital={setInitialCapital}
+                    stopLoss={stopLoss}
+                    setStopLoss={setStopLoss}
+                    takeProfit={takeProfit}
+                    setTakeProfit={setTakeProfit}
+                    leverage={leverage}
+                    setLeverage={setLeverage}
+                    positionSizePercent={positionSizePercent}
+                    setPositionSizePercent={setPositionSizePercent}
+                    backtestStrategy={backtestStrategy}
+                    setBacktestStrategy={setBacktestStrategy}
+                    rsiPeriod={rsiPeriod}
+                    setRsiPeriod={setRsiPeriod}
+                    rsiOversold={rsiOversold}
+                    setRsiOversold={setRsiOversold}
+                    rsiOverbought={rsiOverbought}
+                    setRsiOverbought={setRsiOverbought}
+                    bbPeriod={bbPeriod}
+                    setBbPeriod={setBbPeriod}
+                    bbStdDev={bbStdDev}
+                    setBbStdDev={setBbStdDev}
+                    useVolumeFilter={useVolumeFilter}
+                    setUseVolumeFilter={setUseVolumeFilter}
+                    volumeMaPeriod={volumeMaPeriod}
+                    setVolumeMaPeriod={setVolumeMaPeriod}
+                    volumeThreshold={volumeThreshold}
+                    setVolumeThreshold={setVolumeThreshold}
+                    atrPeriod={atrPeriod}
+                    setAtrPeriod={setAtrPeriod}
+                    atrMultiplierSL={atrMultiplierSL}
+                    setAtrMultiplierSL={setAtrMultiplierSL}
+                    atrMultiplierTP={atrMultiplierTP}
+                    setAtrMultiplierTP={setAtrMultiplierTP}
+                    useAtrPositionSizing={useAtrPositionSizing}
+                    setUseAtrPositionSizing={setUseAtrPositionSizing}
+                    riskPerTradePercent={riskPerTradePercent}
+                    setRiskPerTradePercent={setRiskPerTradePercent}
                 />
                 <PatternDetailModal
                     isOpen={isPatternDetailModalOpen}

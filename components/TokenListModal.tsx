@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useCallback } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { AlphaToken } from '../types';
@@ -103,7 +104,7 @@ export const TokenListModal: React.FC<TokenListModalProps> = ({ isOpen, onClose,
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-center backdrop-blur-sm p-4" onClick={onClose}>
+        <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-center backdrop-blur-sm p-4">
             <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
                 <header className="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
                     <div className="flex items-center gap-3">
