@@ -20,6 +20,7 @@ export const en = {
   'filterPatterns': 'Filter Patterns',
   'selectAll': 'Select All',
   'deselectAll': 'Deselect All',
+  'filterByPriority': 'Filter by Priority',
   'patternTypeReversal': 'Reversal Patterns',
   'patternTypeTrend': 'Trend Patterns',
   'patternTypeRange': 'Range Patterns',

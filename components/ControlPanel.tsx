@@ -1,13 +1,10 @@
-
-
-
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { TIMEFRAMES, ALL_PATTERNS } from '../constants';
 import { RefreshIcon } from './icons/RefreshIcon';
 import { useLanguage } from '../contexts/LanguageContext';
 import { FilterIcon } from './icons/FilterIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
+import { PriorityFilterIcon } from './icons/PriorityFilterIcon';
 import { PatternType, PriceAlert } from '../types';
 import { BrainIcon } from './icons/BrainIcon';
 import { AlertIcon } from './icons/AlertIcon';
@@ -28,6 +25,8 @@ interface ControlPanelProps {
     setEndDate: (date: Date) => void;
     selectedPatterns: Set<string>;
     setSelectedPatterns: (patterns: Set<string>) => void;
+    selectedPriorities: Set<number>;
+    setSelectedPriorities: (priorities: Set<number>) => void;
     onRunBacktest: () => void;
     onOpenDecisionMakerModal: () => void;
     alerts: Record<string, PriceAlert[]>;
@@ -58,12 +57,14 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
     startDate, setStartDate,
     endDate, setEndDate,
     selectedPatterns, setSelectedPatterns,
+    selectedPriorities, setSelectedPriorities,
     onRunBacktest,
     onOpenDecisionMakerModal,
     alerts, addAlert, removeAlert
 }) => {
     const { locale, setLocale, t } = useLanguage();
     const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [isPriorityFilterOpen, setIsPriorityFilterOpen] = useState(false);
     const [isAlertPopoverOpen, setIsAlertPopoverOpen] = useState(false);
     const [newAlertPrice, setNewAlertPrice] = useState('');
     const [isSymbolDropdownOpen, setIsSymbolDropdownOpen] = useState(false);
@@ -71,6 +72,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
     const [visibleSymbolCount, setVisibleSymbolCount] = useState(50);
 
     const filterMenuRef = useRef<HTMLDivElement>(null);
+    const priorityFilterMenuRef = useRef<HTMLDivElement>(null);
     const alertPopoverRef = useRef<HTMLDivElement>(null);
     const symbolDropdownRef = useRef<HTMLDivElement>(null);
     const symbolListRef = useRef<HTMLUListElement>(null);
@@ -86,6 +88,9 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
         const handleClickOutside = (event: MouseEvent) => {
             if (filterMenuRef.current && !filterMenuRef.current.contains(event.target as Node)) {
                 setIsFilterOpen(false);
+            }
+            if (priorityFilterMenuRef.current && !priorityFilterMenuRef.current.contains(event.target as Node)) {
+                setIsPriorityFilterOpen(false);
             }
             if (symbolDropdownRef.current && !symbolDropdownRef.current.contains(event.target as Node)) {
                 setIsSymbolDropdownOpen(false);
@@ -126,6 +131,26 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
         setSelectedPatterns(newSet);
     }
     
+    const priorityLevels = useMemo(() => [
+        { level: 4, labelKey: 'priorityVeryHigh' },
+        { level: 3, labelKey: 'priorityHigh' },
+        { level: 2, labelKey: 'priorityMedium' },
+        { level: 1, labelKey: 'priorityLow' },
+    ], []);
+
+    const handlePriorityFilterChange = (level: number, checked: boolean) => {
+        const newSet = new Set(selectedPriorities);
+        if (checked) {
+            newSet.add(level);
+        } else {
+            newSet.delete(level);
+        }
+        setSelectedPriorities(newSet);
+    };
+
+    const handleSelectAllPriorities = () => setSelectedPriorities(new Set([1, 2, 3, 4]));
+    const handleDeselectAllPriorities = () => setSelectedPriorities(new Set());
+
     const patternsByType = useMemo(() => {
         return ALL_PATTERNS.reduce((acc, pattern) => {
             const type = pattern.type;
@@ -317,6 +342,33 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
                                 </div>
                             ))}
                         </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="relative" ref={priorityFilterMenuRef}>
+                <button onClick={() => setIsPriorityFilterOpen(!isPriorityFilterOpen)} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('filterByPriority')}>
+                    <PriorityFilterIcon className="w-5 h-5" />
+                </button>
+                {isPriorityFilterOpen && (
+                    <div className="absolute right-0 mt-2 w-56 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl z-30 p-4 text-sm">
+                        <div className="flex justify-between items-center mb-3">
+                            <h4 className="font-bold text-base text-cyan-400">{t('filterByPriority')}</h4>
+                            <div className="flex gap-2">
+                                <button onClick={handleSelectAllPriorities} className="text-cyan-400 hover:text-cyan-300 text-xs font-medium">{t('selectAll')}</button>
+                                <button onClick={handleDeselectAllPriorities} className="text-gray-400 hover:text-gray-300 text-xs font-medium">{t('deselectAll')}</button>
+                            </div>
+                        </div>
+                        <ul className="space-y-2">
+                            {priorityLevels.map(p => (
+                                <li key={p.level}>
+                                    <label className="flex items-center gap-2 text-gray-400 hover:text-gray-200 cursor-pointer">
+                                        <input type="checkbox" checked={selectedPriorities.has(p.level)} onChange={(e) => handlePriorityFilterChange(p.level, e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" />
+                                        {t(p.labelKey)}
+                                    </label>
+                                </li>
+                            ))}
+                        </ul>
                     </div>
                 )}
             </div>

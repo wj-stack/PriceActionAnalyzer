@@ -39,6 +39,9 @@ const App: React.FC = () => {
     const [selectedPatterns, setSelectedPatterns] = useState<Set<string>>(
         () => new Set(ALL_PATTERNS.map(p => p.name))
     );
+    const [selectedPriorities, setSelectedPriorities] = useState<Set<number>>(
+        () => new Set([1, 2, 3, 4]) // Default to all priorities
+    );
     
     const [hoveredPatternIndex, setHoveredPatternIndex] = useState<number | null>(null);
     
@@ -218,8 +221,11 @@ const App: React.FC = () => {
 
     const displayedCandles = candles;
     const displayedPatterns = useMemo(() => {
-        return patterns.filter(p => selectedPatterns.has(p.name));
-    }, [patterns, selectedPatterns]);
+        return patterns.filter(p => 
+            selectedPatterns.has(p.name) &&
+            selectedPriorities.has(p.priority)
+        );
+    }, [patterns, selectedPatterns, selectedPriorities]);
 
 
     const addAlert = useCallback((symbol: string, price: number) => {
@@ -374,6 +380,8 @@ const App: React.FC = () => {
                         setEndDate={setEndDate}
                         selectedPatterns={selectedPatterns}
                         setSelectedPatterns={setSelectedPatterns}
+                        selectedPriorities={selectedPriorities}
+                        setSelectedPriorities={setSelectedPriorities}
                         onRunBacktest={handleRunBacktest}
                         onOpenDecisionMakerModal={onOpenDecisionMakerModal}
                         alerts={alerts}

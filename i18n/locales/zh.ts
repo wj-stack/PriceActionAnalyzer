@@ -20,6 +20,7 @@ export const zh = {
   'filterPatterns': '筛选形态',
   'selectAll': '全选',
   'deselectAll': '取消全选',
+  'filterByPriority': '按优先级筛选',
   'patternTypeReversal': '反转形态',
   'patternTypeTrend': '趋势形态',
   'patternTypeRange': '盘整形态',
