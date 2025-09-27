@@ -16,6 +16,24 @@ interface SignalListProps {
     onShowPatternDetails: (patternName: string) => void;
 }
 
+const PriorityIndicator: React.FC<{ level: number }> = ({ level }) => {
+    const { t } = useLanguage();
+    const priorityLabels = [t('priorityLow'), t('priorityMedium'), t('priorityHigh'), t('priorityVeryHigh')];
+    const title = `${t('priority')}: ${priorityLabels[level - 1] || ''}`;
+
+    return (
+        <div className="flex items-end gap-0.5 h-4" title={title}>
+            {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                    key={i}
+                    className={`w-1 rounded-full transition-colors ${i < level ? 'bg-cyan-400' : 'bg-gray-600'}`}
+                    style={{ height: `${(i + 1) * 25}%` }}
+                />
+            ))}
+        </div>
+    );
+};
+
 interface SignalItemProps {
     pattern: DetectedPattern;
     t: (key: string) => string;
@@ -51,6 +69,7 @@ const SignalItem: React.FC<SignalItemProps> = ({ pattern, t, onMouseEnter, onMou
                         : <ArrowDownIcon className={`w-5 h-5 ${colorClass} flex-shrink-0`} />
                     }
                     <h4 className={`font-semibold ${colorClass}`}>{t(pattern.name)}</h4>
+                    <PriorityIndicator level={pattern.priority} />
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${contextStyles[pattern.type]}`}>
                         {t(`patternContext${pattern.type}`)}
                     </span>

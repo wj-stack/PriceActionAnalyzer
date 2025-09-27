@@ -45,7 +45,7 @@ export interface DetectedPattern {
   type: PatternType;
   direction: SignalDirection;
   description: string;
-  priority: number;
+  priority: number; // Priority scale: 1 (Low) to 4 (Very High)
 }
 
 export type BacktestStrategy = 'SIGNAL_ONLY' | 'RSI_FILTER' | 'BOLLINGER_BANDS' | 'ATR_TRAILING_STOP';
