@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ResponsiveContainer, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Bar, ReferenceDot, ReferenceLine } from 'recharts';
-import type { Candle, DetectedPattern } from '../types';
+import type { Candle, DetectedPattern, MultiTimeframeAnalysis } from '../types';
 import { SignalDirection } from '../types';
 import { ZoomInIcon } from './icons/ZoomInIcon';
 import { ZoomOutIcon } from './icons/ZoomOutIcon';
@@ -14,6 +14,8 @@ interface PriceChartProps {
     data: Candle[];
     patterns: DetectedPattern[];
     hoveredPatternIndex: number | null;
+    multiTimeframeAnalysis: MultiTimeframeAnalysis[];
+    hoveredMultiTimeframePattern: DetectedPattern | null;
 }
 
 const CustomCandlestick = (props: any) => {
@@ -72,7 +74,7 @@ const CustomTooltip = ({ active, payload, label, t, formatPrice }: any) => {
   return null;
 };
 
-// Annotation component for patterns
+// Annotation component for primary patterns
 const PatternAnnotation = ({ cx, cy, payload, direction, isHovered }: any) => {
     const color = direction === SignalDirection.Bullish ? '#34D399' : '#F87171';
     const glowColor = '#06B6D4'; // Cyan for glow
@@ -106,7 +108,44 @@ const PatternAnnotation = ({ cx, cy, payload, direction, isHovered }: any) => {
     )
 };
 
-const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hoveredPatternIndex }) => {
+// Annotation component for higher timeframe signals
+const HigherTimeframeAnnotation = ({ cx, cy, direction, timeframeLabel, patternName, t, isHovered }: any) => {
+    const color = direction === SignalDirection.Bullish ? '#10B981' : '#EF4444';
+    const glowColor = '#06B6D4'; // Cyan for glow
+    
+    return (
+        <g>
+            <title>{`${timeframeLabel} - ${t(patternName)}`}</title>
+             {isHovered && (
+                 <circle cx={cx} cy={cy} r="12" fill={glowColor} fillOpacity="0.5">
+                    <animate 
+                        attributeName="r" 
+                        from="10" 
+                        to="15" 
+                        dur="1.5s" 
+                        begin="0s" 
+                        repeatCount="indefinite"
+                    />
+                    <animate 
+                        attributeName="opacity" 
+                        from="0.7" 
+                        to="0" 
+                        dur="1.5s" 
+                        begin="0s" 
+                        repeatCount="indefinite"
+                    />
+                </circle>
+            )}
+            <circle cx={cx} cy={cy} r="9" fill={color} stroke="#1F2937" strokeWidth="2" />
+            <text x={cx} y={cy + 1} fill="#FFFFFF" textAnchor="middle" dy=".3em" fontSize="9" fontWeight="bold">
+                {timeframeLabel}
+            </text>
+        </g>
+    );
+};
+
+
+const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hoveredPatternIndex, multiTimeframeAnalysis, hoveredMultiTimeframePattern }) => {
     const { t } = useLanguage();
     const [range, setRange] = useState({ start: 0, end: data.length });
     const prevDataRef = useRef<Candle[] | null>(null);
@@ -159,6 +198,31 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hovere
     const visiblePatterns = useMemo(() => {
         return patterns.filter(p => p.index >= range.start && p.index < range.end);
     }, [patterns, range]);
+
+    const getTimeframeLabel = (timeframe: string) => {
+        if (timeframe.includes('m')) return timeframe.replace('m','');
+        if (timeframe.includes('h')) return timeframe.toUpperCase();
+        if (timeframe.includes('d')) return timeframe.toUpperCase();
+        if (timeframe.includes('w')) return timeframe.toUpperCase();
+        if (timeframe.includes('mo')) return 'M';
+        return timeframe;
+    };
+
+    const visibleHigherTimeframeSignals = useMemo(() => {
+        if (!multiTimeframeAnalysis) return [];
+        
+        const visibleStartTime = visibleData[0]?.time;
+        const visibleEndTime = visibleData[visibleData.length - 1]?.time;
+        if (!visibleStartTime || !visibleEndTime) return [];
+
+        return multiTimeframeAnalysis.flatMap(analysis => 
+            analysis.patterns.map(pattern => ({
+                ...pattern,
+                timeframeLabel: getTimeframeLabel(analysis.timeframe),
+            }))
+        ).filter(p => p.candle.time >= visibleStartTime && p.candle.time <= visibleEndTime);
+
+    }, [multiTimeframeAnalysis, visibleData]);
 
     const formatPrice = (price: number): string => {
         if (typeof price !== 'number' || isNaN(price)) return '';
@@ -326,9 +390,10 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hovere
 
                     <Bar dataKey="wick" shape={<CustomCandlestick />} />
 
+                    {/* Primary Timeframe Patterns */}
                     {visiblePatterns.map((p, index) => (
                         <ReferenceDot 
-                            key={`pattern-${index}`}
+                            key={`pattern-${p.index}`}
                             x={p.candle.time}
                             y={p.direction === SignalDirection.Bullish 
                                 ? p.candle.low - annotationOffset 
@@ -338,6 +403,31 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hovere
                             shape={<PatternAnnotation direction={p.direction} isHovered={p.index === hoveredPatternIndex} />}
                         />
                     ))}
+
+                    {/* Higher Timeframe Patterns */}
+                    {visibleHigherTimeframeSignals.map((p, index) => {
+                        const isHovered = hoveredMultiTimeframePattern ? 
+                            p.candle.time === hoveredMultiTimeframePattern.candle.time && p.name === hoveredMultiTimeframePattern.name : 
+                            false;
+                        return (
+                            <ReferenceDot 
+                                key={`htf-pattern-${p.index}-${index}`}
+                                x={p.candle.time}
+                                y={p.direction === SignalDirection.Bullish 
+                                    ? p.candle.low - (annotationOffset * 1.5)
+                                    : p.candle.high + (annotationOffset * 1.5)
+                                }
+                                r={9}
+                                shape={<HigherTimeframeAnnotation 
+                                    direction={p.direction} 
+                                    timeframeLabel={p.timeframeLabel}
+                                    patternName={p.name}
+                                    t={t}
+                                    isHovered={isHovered}
+                                />}
+                            />
+                        );
+                    })}
                 </ComposedChart>
             </ResponsiveContainer>
         </div>

@@ -1,19 +1,18 @@
 
-
-import React from 'react';
+import React, { useState } from 'react';
 import type { DetectedPattern } from '../types';
 import { SignalDirection, PatternType } from '../types';
 import { ArrowUpIcon } from './icons/ArrowUpIcon';
 import { ArrowDownIcon } from './icons/ArrowDownIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { useLanguage } from '../contexts/LanguageContext';
+import { SignalDetail } from './SignalDetail';
 
 interface SignalListProps {
     patterns: DetectedPattern[];
     isLoading: boolean;
     setHoveredPatternIndex: (index: number | null) => void;
     onSignalClick: (pattern: DetectedPattern) => void;
-    onShowPatternDetails: (patternName: string) => void;
 }
 
 const PriorityIndicator: React.FC<{ level: number }> = ({ level }) => {
@@ -40,10 +39,10 @@ interface SignalItemProps {
     onMouseEnter: () => void;
     onMouseLeave: () => void;
     onClick: () => void;
-    onShowDetails: () => void;
 }
 
-const SignalItem: React.FC<SignalItemProps> = ({ pattern, t, onMouseEnter, onMouseLeave, onClick, onShowDetails }) => {
+const SignalItem: React.FC<SignalItemProps> = ({ pattern, t, onMouseEnter, onMouseLeave, onClick }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
     const isBullish = pattern.direction === SignalDirection.Bullish;
     const colorClass = isBullish ? 'text-green-400' : 'text-red-400';
     const bgClass = isBullish ? 'bg-green-500/10' : 'bg-red-500/10';
@@ -57,34 +56,47 @@ const SignalItem: React.FC<SignalItemProps> = ({ pattern, t, onMouseEnter, onMou
 
     const handleInfoClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        onShowDetails();
+        setIsExpanded(!isExpanded);
     };
     
     return (
-        <div onClick={onClick} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} className={`p-3 rounded-lg border ${borderClass} ${bgClass} transition-all hover:shadow-cyan-500/20 hover:shadow-lg hover:border-cyan-500/50 cursor-pointer`}>
-            <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                    {isBullish 
-                        ? <ArrowUpIcon className={`w-5 h-5 ${colorClass} flex-shrink-0`} /> 
-                        : <ArrowDownIcon className={`w-5 h-5 ${colorClass} flex-shrink-0`} />
-                    }
-                    <h4 className={`font-semibold ${colorClass}`}>{t(pattern.name)}</h4>
-                    <PriorityIndicator level={pattern.priority} />
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${contextStyles[pattern.type]}`}>
-                        {t(`patternContext${pattern.type}`)}
-                    </span>
-                     <button onClick={handleInfoClick} className="text-gray-400 hover:text-cyan-400 transition-colors" aria-label={t('showCalculationDetails')}>
-                        <InfoIcon className="w-4 h-4" />
-                    </button>
+        <div onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} className={`rounded-lg border ${borderClass} ${bgClass} transition-all duration-300 ease-in-out hover:shadow-cyan-500/20 hover:shadow-lg hover:border-cyan-500/50`}>
+            <div className="p-3">
+                <div className="flex items-start justify-between gap-2">
+                    <div className="flex-grow cursor-pointer" onClick={onClick}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {isBullish 
+                                ? <ArrowUpIcon className={`w-5 h-5 ${colorClass} flex-shrink-0`} /> 
+                                : <ArrowDownIcon className={`w-5 h-5 ${colorClass} flex-shrink-0`} />
+                            }
+                            <h4 className={`font-semibold ${colorClass}`}>{t(pattern.name)}</h4>
+                            <PriorityIndicator level={pattern.priority} />
+                        </div>
+                        <p className="text-sm text-gray-300 mt-1 pl-7">{t(pattern.description)}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                        <span className="text-xs text-gray-400">{new Date(pattern.candle.time * 1000).toLocaleString()}</span>
+                        <div className="flex items-center gap-2">
+                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${contextStyles[pattern.type]}`}>
+                                {t(`patternContext${pattern.type}`)}
+                            </span>
+                            <button onClick={handleInfoClick} className="text-gray-400 hover:text-cyan-400 transition-colors" aria-label={t('showCalculationDetails')}>
+                                <InfoIcon className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <span className="text-xs text-gray-400 text-right flex-shrink-0">{new Date(pattern.candle.time * 1000).toLocaleString()}</span>
             </div>
-            <p className="text-sm text-gray-300 mt-1 pl-7">{t(pattern.description)}</p>
+            {isExpanded && (
+                <div className="px-3 pb-3">
+                    <SignalDetail patternName={pattern.name} />
+                </div>
+            )}
         </div>
     );
 }
 
-const SignalListComponent: React.FC<SignalListProps> = ({ patterns, isLoading, setHoveredPatternIndex, onSignalClick, onShowPatternDetails }) => {
+const SignalListComponent: React.FC<SignalListProps> = ({ patterns, isLoading, setHoveredPatternIndex, onSignalClick }) => {
     const { t } = useLanguage();
     const sortedPatterns = [...patterns].sort((a, b) => b.candle.time - a.candle.time);
 
@@ -106,7 +118,6 @@ const SignalListComponent: React.FC<SignalListProps> = ({ patterns, isLoading, s
                         onMouseEnter={() => setHoveredPatternIndex(p.index)}
                         onMouseLeave={() => setHoveredPatternIndex(null)}
                         onClick={() => onSignalClick(p)}
-                        onShowDetails={() => onShowPatternDetails(p.name)}
                     />
                 ))}
             </div>

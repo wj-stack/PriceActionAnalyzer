@@ -43,6 +43,7 @@ export const zh = {
   'noActiveAlerts': '此交易对暂无价格提醒。',
   'removeAlert': '移除提醒',
   'alertTriggeredMessage': '🔔 价格提醒: {{symbol}} 已达到 {{price}}！',
+  'selectTimeframes': '选择分析周期',
 
   // PriceChart.tsx
   'noData': '无可用数据。',
@@ -304,4 +305,10 @@ export const zh = {
   
   // Signals Tab
   'signalsInfoTab': '信号',
+
+  // Multi-Timeframe Panel
+  'multiTimeframeContext': '多时间周期分析',
+  'recentSignals': '近期信号',
+  'noContextSignals': '此时间周期内无近期信号。',
+  'selectTimeframesPrompt': '请在控制面板中选择更高的时间周期以查看市场宏观背景。',
 };

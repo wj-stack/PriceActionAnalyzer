@@ -1,21 +1,22 @@
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PriceChart } from './components/PriceChart';
 import { SignalList } from './components/SignalList';
 import { StrategyModal } from './components/StrategyModal';
 import { BacktestModal } from './components/BacktestModal';
-import { PatternDetailModal } from './components/PatternDetailModal';
 import { AIDecisionMakerModal } from './components/AIDecisionMakerModal';
 import { ToastContainer } from './components/toast/ToastContainer';
 import { fetchKlines, fetchExchangeInfo, subscribeToKlineStream } from './services/binanceService';
 import { analyzeCandles } from './services/patternRecognizer';
 import { getTradingStrategy } from './services/aiService';
 import { runBacktest, BacktestResult } from './services/backtestService';
-import type { Candle, DetectedPattern, BacktestStrategy, PriceAlert } from './types';
-import { FALLBACK_SYMBOLS, ALL_PATTERNS, BACKTEST_INITIAL_CAPITAL, BACKTEST_COMMISSION_RATE } from './constants';
+import type { Candle, DetectedPattern, BacktestStrategy, PriceAlert, MultiTimeframeAnalysis } from './types';
+import { FALLBACK_SYMBOLS, ALL_PATTERNS, BACKTEST_INITIAL_CAPITAL, BACKTEST_COMMISSION_RATE, TIMEFRAMES } from './constants';
 import { LogoIcon } from './components/icons/LogoIcon';
 import { useLanguage } from './contexts/LanguageContext';
 import { useToast } from './contexts/ToastContext';
+import { MultiTimeframePanel } from './components/MultiTimeframePanel';
 
 const App: React.FC = () => {
     const [symbolsList, setSymbolsList] = useState<{ value: string; label: string; baseAssetLogoUrl?: string; quoteAssetLogoUrl?: string; isAlpha?: boolean; }[]>([]);
@@ -55,10 +56,6 @@ const App: React.FC = () => {
     // AI Decision Maker State
     const [isDecisionMakerModalOpen, setIsDecisionMakerModalOpen] = useState<boolean>(false);
 
-    // Pattern Detail Modal State
-    const [isPatternDetailModalOpen, setIsPatternDetailModalOpen] = useState<boolean>(false);
-    const [selectedPatternForDetail, setSelectedPatternForDetail] = useState<string | null>(null);
-
     // Backtest State
     const [isBacktestModalOpen, setIsBacktestModalOpen] = useState<boolean>(false);
     const [isBacktestRunning, setIsBacktestRunning] = useState<boolean>(false);
@@ -85,6 +82,12 @@ const App: React.FC = () => {
 
     // Price Alert State
     const [alerts, setAlerts] = useState<Record<string, PriceAlert[]>>({});
+
+    // Multi-Timeframe State
+    const [secondaryTimeframes, setSecondaryTimeframes] = useState<Set<string>>(() => new Set(['1d']));
+    const [multiTimeframeAnalysis, setMultiTimeframeAnalysis] = useState<MultiTimeframeAnalysis[]>([]);
+    const [isMultiTimeframeLoading, setIsMultiTimeframeLoading] = useState<boolean>(false);
+    const [hoveredMultiTimeframePattern, setHoveredMultiTimeframePattern] = useState<DetectedPattern | null>(null);
 
     // WebSocket and Data Caching Refs
     const wsCleanupRef = useRef<(() => void) | null>(null);
@@ -166,7 +169,6 @@ const App: React.FC = () => {
         setBacktestResult(null);
         setIsModalOpen(false);
         setIsBacktestModalOpen(false);
-        setIsPatternDetailModalOpen(false);
         setIsDecisionMakerModalOpen(false);
 
         wsCleanupRef.current?.();
@@ -200,6 +202,19 @@ const App: React.FC = () => {
                 performAnalysis(historicalCandles);
 
                 wsCleanupRef.current = subscribeToKlineStream(symbol, timeframe, handleWsUpdate);
+                
+                // Fetch multi-timeframe data
+                setIsMultiTimeframeLoading(true);
+                const analysisPromises = Array.from(secondaryTimeframes).map(async (tf) => {
+                    if (tf === timeframe) return null;
+                    const secondaryCandles = await fetchKlines(symbol, tf, 500, startDate.getTime(), endDate.getTime());
+                    const secondaryPatterns = analyzeCandles(secondaryCandles);
+                    return { timeframe: tf, patterns: secondaryPatterns };
+                });
+                 const results = (await Promise.all(analysisPromises)).filter((r): r is MultiTimeframeAnalysis => r !== null);
+                const sortedResults = results.sort((a, b) => TIMEFRAMES.findIndex(t => t.value === b.timeframe) - TIMEFRAMES.findIndex(t => t.value === a.timeframe));
+                setMultiTimeframeAnalysis(sortedResults);
+
 
             } catch (err) {
                 setError(t('fetchError'));
@@ -207,6 +222,7 @@ const App: React.FC = () => {
                 setCandles([]);
             } finally {
                 setIsLoading(false);
+                setIsMultiTimeframeLoading(false);
             }
         };
 
@@ -216,7 +232,7 @@ const App: React.FC = () => {
             wsCleanupRef.current?.();
         };
 
-    }, [symbol, timeframe, startDate, endDate, t, isSymbolsLoading, refreshCount, handleWsUpdate, performAnalysis]);
+    }, [symbol, timeframe, startDate, endDate, t, isSymbolsLoading, refreshCount, handleWsUpdate, performAnalysis, secondaryTimeframes]);
     
 
     const displayedCandles = candles;
@@ -295,11 +311,6 @@ const App: React.FC = () => {
             setIsAiLoading(false);
         }
     }, [symbol, timeframe, locale, strategyCache, candles, t]);
-
-    const handleShowPatternDetails = useCallback((patternName: string) => {
-        setSelectedPatternForDetail(patternName);
-        setIsPatternDetailModalOpen(true);
-    }, []);
 
     const runBacktestInternal = useCallback(() => {
          return runBacktest(
@@ -382,6 +393,8 @@ const App: React.FC = () => {
                         setSelectedPatterns={setSelectedPatterns}
                         selectedPriorities={selectedPriorities}
                         setSelectedPriorities={setSelectedPriorities}
+                        secondaryTimeframes={secondaryTimeframes}
+                        setSecondaryTimeframes={setSecondaryTimeframes}
                         onRunBacktest={handleRunBacktest}
                         onOpenDecisionMakerModal={onOpenDecisionMakerModal}
                         alerts={alerts}
@@ -404,6 +417,8 @@ const App: React.FC = () => {
                                 data={displayedCandles} 
                                 patterns={displayedPatterns} 
                                 hoveredPatternIndex={hoveredPatternIndex}
+                                multiTimeframeAnalysis={multiTimeframeAnalysis}
+                                hoveredMultiTimeframePattern={hoveredMultiTimeframePattern}
                             />
                         )}
                     </div>
@@ -413,9 +428,16 @@ const App: React.FC = () => {
                             isLoading={isLoading && candles.length === 0} 
                             setHoveredPatternIndex={setHoveredPatternIndex}
                             onSignalClick={handleSignalClick}
-                            onShowPatternDetails={handleShowPatternDetails}
                         />
                     </div>
+                </div>
+
+                <div className="mt-6">
+                    <MultiTimeframePanel 
+                        analysis={multiTimeframeAnalysis}
+                        isLoading={isMultiTimeframeLoading}
+                        setHoveredMultiTimeframePattern={setHoveredMultiTimeframePattern}
+                    />
                 </div>
 
                 <StrategyModal 
@@ -476,11 +498,6 @@ const App: React.FC = () => {
                     setUseAtrPositionSizing={setUseAtrPositionSizing}
                     riskPerTradePercent={riskPerTradePercent}
                     setRiskPerTradePercent={setRiskPerTradePercent}
-                />
-                <PatternDetailModal
-                    isOpen={isPatternDetailModalOpen}
-                    onClose={() => setIsPatternDetailModalOpen(false)}
-                    patternName={selectedPatternForDetail}
                 />
             </main>
              <footer className="text-center p-4 text-gray-500 text-sm mt-8">

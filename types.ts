@@ -166,3 +166,7 @@ export interface EquityDataPoint {
   equity: number;
 }
 export type TradeCloseReason = 'STOP_LOSS' | 'TAKE_PROFIT' | 'END_OF_DATA' | 'REVERSE_SIGNAL' | 'LIQUIDATION';
+export interface MultiTimeframeAnalysis {
+  timeframe: string;
+  patterns: DetectedPattern[];
+}

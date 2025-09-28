@@ -9,6 +9,7 @@ import { PatternType, PriceAlert } from '../types';
 import { BrainIcon } from './icons/BrainIcon';
 import { AlertIcon } from './icons/AlertIcon';
 import { CloseIcon } from './icons/CloseIcon';
+import { LayersIcon } from './icons/LayersIcon';
 
 interface ControlPanelProps {
     symbols: { value: string; label: string; baseAssetLogoUrl?: string; quoteAssetLogoUrl?: string; isAlpha?: boolean; }[];
@@ -27,6 +28,8 @@ interface ControlPanelProps {
     setSelectedPatterns: (patterns: Set<string>) => void;
     selectedPriorities: Set<number>;
     setSelectedPriorities: (priorities: Set<number>) => void;
+    secondaryTimeframes: Set<string>;
+    setSecondaryTimeframes: (timeframes: Set<string>) => void;
     onRunBacktest: () => void;
     onOpenDecisionMakerModal: () => void;
     alerts: Record<string, PriceAlert[]>;
@@ -58,6 +61,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
     endDate, setEndDate,
     selectedPatterns, setSelectedPatterns,
     selectedPriorities, setSelectedPriorities,
+    secondaryTimeframes, setSecondaryTimeframes,
     onRunBacktest,
     onOpenDecisionMakerModal,
     alerts, addAlert, removeAlert
@@ -66,6 +70,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isPriorityFilterOpen, setIsPriorityFilterOpen] = useState(false);
     const [isAlertPopoverOpen, setIsAlertPopoverOpen] = useState(false);
+    const [isMultiTimeframeOpen, setIsMultiTimeframeOpen] = useState(false);
     const [newAlertPrice, setNewAlertPrice] = useState('');
     const [isSymbolDropdownOpen, setIsSymbolDropdownOpen] = useState(false);
     const [symbolSearch, setSymbolSearch] = useState('');
@@ -76,6 +81,7 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
     const alertPopoverRef = useRef<HTMLDivElement>(null);
     const symbolDropdownRef = useRef<HTMLDivElement>(null);
     const symbolListRef = useRef<HTMLUListElement>(null);
+    const multiTimeframeMenuRef = useRef<HTMLDivElement>(null);
     
     const isDateRangeValid = useMemo(() => {
         return endDate.getTime() > startDate.getTime();
@@ -98,6 +104,9 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
             }
             if (alertPopoverRef.current && !alertPopoverRef.current.contains(event.target as Node)) {
                 setIsAlertPopoverOpen(false);
+            }
+            if (multiTimeframeMenuRef.current && !multiTimeframeMenuRef.current.contains(event.target as Node)) {
+                setIsMultiTimeframeOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -150,6 +159,18 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
 
     const handleSelectAllPriorities = () => setSelectedPriorities(new Set([1, 2, 3, 4]));
     const handleDeselectAllPriorities = () => setSelectedPriorities(new Set());
+
+    const handleSecondaryTimeframeChange = (tf: string, checked: boolean) => {
+        const newSet = new Set(secondaryTimeframes);
+        if (checked) {
+            newSet.add(tf);
+        } else {
+            newSet.delete(tf);
+        }
+        setSecondaryTimeframes(newSet);
+    };
+
+    const CONTEXT_TIMEFRAMES = useMemo(() => TIMEFRAMES.filter(tf => ['4h', '6h', '8h', '12h', '1d', '3d', '1w', '1mo'].includes(tf.value)), []);
 
     const patternsByType = useMemo(() => {
         return ALL_PATTERNS.reduce((acc, pattern) => {
@@ -365,6 +386,27 @@ const ControlPanelComponent: React.FC<ControlPanelProps> = ({
                                     <label className="flex items-center gap-2 text-gray-400 hover:text-gray-200 cursor-pointer">
                                         <input type="checkbox" checked={selectedPriorities.has(p.level)} onChange={(e) => handlePriorityFilterChange(p.level, e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" />
                                         {t(p.labelKey)}
+                                    </label>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </div>
+
+            <div className="relative" ref={multiTimeframeMenuRef}>
+                <button onClick={() => setIsMultiTimeframeOpen(!isMultiTimeframeOpen)} disabled={isLoading} className={`p-2 bg-gray-700 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-200 ${disabledClasses}`} aria-label={t('selectTimeframes')}>
+                    <LayersIcon className="w-5 h-5" />
+                </button>
+                {isMultiTimeframeOpen && (
+                     <div className="absolute right-0 mt-2 w-56 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl z-30 p-4 text-sm">
+                        <h4 className="font-bold text-base text-cyan-400 mb-3">{t('selectTimeframes')}</h4>
+                        <ul className="space-y-2">
+                            {CONTEXT_TIMEFRAMES.map(tf => (
+                                <li key={tf.value}>
+                                    <label className="flex items-center gap-2 text-gray-400 hover:text-gray-200 cursor-pointer">
+                                        <input type="checkbox" disabled={tf.value === timeframe} checked={secondaryTimeframes.has(tf.value)} onChange={(e) => handleSecondaryTimeframeChange(tf.value, e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500 disabled:opacity-50" />
+                                        {tf.label}
                                     </label>
                                 </li>
                             ))}

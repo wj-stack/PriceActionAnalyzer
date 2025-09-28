@@ -43,6 +43,7 @@ export const en = {
   'noActiveAlerts': 'No active alerts for this symbol.',
   'removeAlert': 'Remove Alert',
   'alertTriggeredMessage': '🔔 Price Alert: {{symbol}} has reached {{price}}!',
+  'selectTimeframes': 'Select Context Timeframes',
 
   // PriceChart.tsx
   'noData': 'No data available.',
@@ -305,4 +306,10 @@ export const en = {
 
   // Signals Tab
   'signalsInfoTab': 'Signals',
+
+  // Multi-Timeframe Panel
+  'multiTimeframeContext': 'Multi-Timeframe Context',
+  'recentSignals': 'Recent Signals',
+  'noContextSignals': 'No recent signals on this timeframe.',
+  'selectTimeframesPrompt': 'Select higher timeframes from the control panel to see broader market context.',
 };
