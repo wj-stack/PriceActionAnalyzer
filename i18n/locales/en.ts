@@ -68,7 +68,13 @@ export const en = {
   'priorityMedium': 'Medium',
   'priorityHigh': 'High',
   'priorityVeryHigh': 'Very High',
-  
+  'strengthScoreLong': 'Long Strength',
+  'strengthScoreShort': 'Short Strength',
+  'strengthScoreLongTooltip': 'The strength of the signal for a bullish (long) position.',
+  'strengthScoreShortTooltip': 'The strength of the signal for a bearish (short) position.',
+  'keySignal': 'Key Signal',
+  'keySignalTooltip': 'A high-probability signal that aligns with the current market trend.',
+
   // AI Strategy Modal
   'aiStrategyTitle': 'AI Trading Strategy',
   'aiLoadingStrategy': 'Generating strategy with AI...',
@@ -184,6 +190,10 @@ export const en = {
   'doji': 'Doji',
   'hammer': 'Hammer',
   'shootingStar': 'Shooting Star',
+  'morningStar': 'Morning Star',
+  'eveningStar': 'Evening Star',
+  'towerBottom': 'Tower Bottom',
+  'towerTop': 'Tower Top',
   'threeSoldiers': 'Three White Soldiers',
   'threeCrows': 'Three Black Crows',
   'bullishBreakout': 'Bullish Breakout',
@@ -192,6 +202,10 @@ export const en = {
   'emaPullbackBear': 'Bearish EMA Pullback',
   'failedBullishBreakout': 'Failed Bullish Breakout',
   'failedBearishBreakout': 'Failed Bearish Breakout',
+  'trendlineBreakoutUp': 'Trendline Breakout (Up)',
+  'trendlineBreakoutDown': 'Trendline Breakdown (Down)',
+  'trendlineBounceBullish': 'Trendline Bounce (Bullish)',
+  'trendlineBounceBearish': 'Trendline Bounce (Bearish)',
   
   // Pattern Descriptions
   'bullishOutsideBarDesc': 'A volatility expansion where the current bar\'s range engulfs the prior bar.',
@@ -203,6 +217,10 @@ export const en = {
   'dojiDesc': 'Open and close prices are nearly identical; signals significant market indecision.',
   'hammerDesc': 'A bullish reversal bar with a long lower wick, indicating rejection of lower prices.',
   'shootingStarDesc': 'A bearish reversal bar with a long upper wick, indicating rejection of higher prices.',
+  'morningStarDesc': 'A three-candle bullish reversal pattern signaling a potential end to a downtrend.',
+  'eveningStarDesc': 'A three-candle bearish reversal pattern signaling a potential end to an uptrend.',
+  'towerBottomDesc': 'A bottom reversal formed by consolidation after a fall, followed by a large bullish candle.',
+  'towerTopDesc': 'A top reversal formed by consolidation after a rise, followed by a large bearish candle.',
   'threeSoldiersDesc': 'Three consecutive strong bullish bars, signaling a powerful new uptrend.',
   'threeCrowsDesc': 'Three consecutive strong bearish bars, signaling a powerful new downtrend.',
   'bullishBreakoutDesc': 'A strong close above a key resistance or prior swing high, signaling trend continuation.',
@@ -211,8 +229,21 @@ export const en = {
   'emaPullbackBearDesc': 'In a strong downtrend, price pulls back to the 20 EMA and is rejected, offering a with-trend entry.',
   'failedBullishBreakoutDesc': 'Price breaks a range high then quickly reverses down, trapping buyers; a strong bearish signal.',
   'failedBearishBreakoutDesc': 'Price breaks a range low then quickly reverses up, trapping sellers; a strong bullish signal.',
+  'trendlineBreakoutUpDesc': 'Price has decisively closed above a significant descending trendline, signaling a potential trend reversal or acceleration.',
+  'trendlineBreakoutDownDesc': 'Price has decisively closed below a significant ascending trendline, signaling a potential trend reversal or acceleration.',
+  'trendlineBounceBullishDesc': 'Price tested an ascending trendline and bounced, confirming the trendline as support and a potential long entry.',
+  'trendlineBounceBearishDesc': 'Price tested a descending trendline and was rejected, confirming the trendline as resistance and a potential short entry.',
+
 
   // Calculation Details
+  'strengthScoreCalculationTitle': 'Strength Score Calculation',
+  'strengthScoreCalculationDesc': 'The Long and Short Strength scores are calculated from 0 to 100 based on a combination of factors to evaluate the quality and context of a signal:',
+  'strengthFactor_location': 'Location: How the signal forms relative to recent swing highs and lows.',
+  'strengthFactor_volume': 'Volume: Higher volume on the signal candle suggests stronger conviction.',
+  'strengthFactor_shape': 'Candle Shape: How "perfect" the candle is (e.g., a Hammer with a very high close is stronger).',
+  'strengthFactor_context': 'Market Context: The prevailing trend or range condition when the signal appears.',
+  'strengthFactor_opposition': 'Signs of Opposition: Factors that may weaken the signal (e.g., a long opposite wick).',
+
   'calc_hammer_desc': 'A Hammer is a bullish reversal pattern identified by the following criteria:',
   'calc_hammer_rule1': '1. Occurs after a price decline (at a local swing low).',
   'calc_hammer_rule2': '2. The candle body is small and located at the top of the trading range.',
@@ -258,6 +289,26 @@ export const en = {
   'calc_bearishOutsideBar_rule2': '2. The current candle\'s High is higher than the previous candle\'s High.',
   'calc_bearishOutsideBar_rule3': '3. The current candle\'s Low is lower than the previous candle\'s Low.',
 
+  'calc_morningStar_desc': 'The Morning Star is a classic three-candle bullish reversal pattern, identified by:',
+  'calc_morningStar_rule1': '1. The first candle is a long bearish bar, continuing the downtrend.',
+  'calc_morningStar_rule2': '2. The second candle has a small body (can be bull, bear, or doji) that typically gaps down.',
+  'calc_morningStar_rule3': '3. The third candle is a long bullish bar that closes well into the body of the first bar.',
+  
+  'calc_eveningStar_desc': 'The Evening Star is a classic three-candle bearish reversal pattern, identified by:',
+  'calc_eveningStar_rule1': '1. The first candle is a long bullish bar, continuing the uptrend.',
+  'calc_eveningStar_rule2': '2. The second candle has a small body (can be bull, bear, or doji) that typically gaps up.',
+  'calc_eveningStar_rule3': '3. The third candle is a long bearish bar that closes well into the body of the first bar.',
+  
+  'calc_towerBottom_desc': 'A Tower Bottom is a more complex bottom reversal pattern identified by:',
+  'calc_towerBottom_rule1': '1. The pattern begins with one or more long bearish candles.',
+  'calc_towerBottom_rule2': '2. This is followed by a period of consolidation with small-bodied candles (the "tower base").',
+  'calc_towerBottom_rule3': '3. The pattern is completed by one or more long bullish candles, signaling a reversal upwards.',
+  
+  'calc_towerTop_desc': 'A Tower Top is a more complex top reversal pattern identified by:',
+  'calc_towerTop_rule1': '1. The pattern begins with one or more long bullish candles.',
+  'calc_towerTop_rule2': '2. This is followed by a period of consolidation with small-bodied candles (the "tower top").',
+  'calc_towerTop_rule3': '3. The pattern is completed by one or more long bearish candles, signaling a reversal downwards.',
+  
   'calc_threeSoldiers_desc': 'Three White Soldiers is a strong bullish trend pattern identified by these strict criteria:',
   'calc_threeSoldiers_rule1': '1. Three consecutive, long-bodied bullish candles.',
   'calc_threeSoldiers_rule2': '2. Each candle closes progressively higher than the one before it.',

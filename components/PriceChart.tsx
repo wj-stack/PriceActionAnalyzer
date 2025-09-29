@@ -1,7 +1,8 @@
 
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ResponsiveContainer, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Bar, ReferenceDot, ReferenceLine } from 'recharts';
-import type { Candle, DetectedPattern, MultiTimeframeAnalysis } from '../types';
+import type { Candle, DetectedPattern, MultiTimeframeAnalysis, TrendLine } from '../types';
 import { SignalDirection } from '../types';
 import { ZoomInIcon } from './icons/ZoomInIcon';
 import { ZoomOutIcon } from './icons/ZoomOutIcon';
@@ -9,13 +10,16 @@ import { ChevronLeftIcon } from './icons/ChevronLeftIcon';
 import { ChevronRightIcon } from './icons/ChevronRightIcon';
 import { ExpandIcon } from './icons/ExpandIcon';
 import { useLanguage } from '../contexts/LanguageContext';
+import { StarIcon } from './icons/StarIcon';
 
 interface PriceChartProps {
     data: Candle[];
     patterns: DetectedPattern[];
+    trendlines: TrendLine[];
     hoveredPatternIndex: number | null;
     multiTimeframeAnalysis: MultiTimeframeAnalysis[];
     hoveredMultiTimeframePattern: DetectedPattern | null;
+    isHistorical: boolean;
 }
 
 const CustomCandlestick = (props: any) => {
@@ -75,9 +79,13 @@ const CustomTooltip = ({ active, payload, label, t, formatPrice }: any) => {
 };
 
 // Annotation component for primary patterns
-const PatternAnnotation = ({ cx, cy, payload, direction, isHovered }: any) => {
+const PatternAnnotation = ({ cx, cy, payload, direction, isHovered, isKeySignal }: any) => {
     const color = direction === SignalDirection.Bullish ? '#34D399' : '#F87171';
     const glowColor = '#06B6D4'; // Cyan for glow
+    const starColor = '#FBBF24'; // Tailwind's yellow-400
+
+    const trianglePath = "M12 2L2 22h20L12 2z";
+    const starPath = "M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z";
 
     return (
        <g>
@@ -101,11 +109,36 @@ const PatternAnnotation = ({ cx, cy, payload, direction, isHovered }: any) => {
                     />
                 </circle>
             )}
-            <svg x={cx - 6} y={cy - 6} width="12" height="12" fill={color} viewBox="0 0 24 24">
-                {direction === SignalDirection.Bullish ? <path d="M12 2L2 22h20L12 2z"/> : <path d="M12 2L2 22h20L12 2z" transform="rotate(180 12 12)"/>}
-            </svg>
+
+            {/* Triangle marker, 12x12px centered at cx,cy */}
+            <path 
+                d={trianglePath}
+                fill={color}
+                transform={
+                    `translate(${cx - 6}, ${cy - 6}) scale(0.5) ` +
+                    (direction === SignalDirection.Bearish ? `rotate(180 12 12)` : '')
+                }
+            />
+
+            {/* Star for Key Signal, 16x16px centered below triangle */}
+            {isKeySignal && 
+                <path 
+                    d={starPath}
+                    fill={starColor}
+                    transform={`translate(${cx - 8}, ${cy + 5}) scale(0.66)`} // 16px size from 24px viewBox
+                />
+            }
        </g>
     )
+};
+
+const BreakoutAnnotation = ({ cx, cy, direction }: any) => {
+    const color = direction === SignalDirection.Bullish ? '#34D399' : '#F87171'; // green, red
+    return (
+        <g transform={`translate(${cx}, ${cy})`}>
+            <path d="M 0 -7 L 7 0 L 0 7 L -7 0 Z" fill={color} />
+        </g>
+    );
 };
 
 // Annotation component for higher timeframe signals
@@ -145,7 +178,7 @@ const HigherTimeframeAnnotation = ({ cx, cy, direction, timeframeLabel, patternN
 };
 
 
-const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hoveredPatternIndex, multiTimeframeAnalysis, hoveredMultiTimeframePattern }) => {
+const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, trendlines, hoveredPatternIndex, multiTimeframeAnalysis, hoveredMultiTimeframePattern, isHistorical }) => {
     const { t } = useLanguage();
     const [range, setRange] = useState({ start: 0, end: data.length });
     const prevDataRef = useRef<Candle[] | null>(null);
@@ -160,7 +193,7 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hovere
             setRange({ start: 0, end: data.length });
         } else {
             const wasAtTheEnd = range.end === prevData.length;
-            if (wasAtTheEnd) {
+            if (wasAtTheEnd && !isHistorical) {
                 setRange(currentRange => {
                     const numVisibleCandles = currentRange.end - currentRange.start;
                     const newEnd = data.length;
@@ -170,7 +203,7 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hovere
             }
         }
         prevDataRef.current = data;
-    }, [data, range.end]);
+    }, [data, range.end, isHistorical]);
 
     const visibleData = useMemo(() => {
         return data.map(candle => ({
@@ -353,8 +386,57 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hovere
                     />
                     <Tooltip content={<CustomTooltip t={t} formatPrice={formatPrice} />} />
 
+                    {/* Intelligent Trendlines & Channels */}
+                    {trendlines.map((tl, index) => {
+                        const lastCandle = data[data.length - 1];
+                        if (!lastCandle) return null;
+
+                        const startX = tl.p1.time;
+                        const endX = lastCandle.time + (lastCandle.time - tl.p1.time) * 0.1; // Extend 10% into future
+
+                        const startY = tl.slope * startX + tl.intercept;
+                        const endY = tl.slope * endX + tl.intercept;
+                        
+                        const color = tl.type === 'UP' ? '#22C55E' : '#EF4444';
+
+                        const channelJsx = tl.channelLine ? (
+                            <ReferenceLine 
+                                key={`channel-${index}`}
+                                segment={[
+                                    { x: startX, y: tl.slope * startX + tl.channelLine.intercept },
+                                    { x: endX, y: tl.slope * endX + tl.channelLine.intercept }
+                                ]}
+                                stroke={color}
+                                strokeOpacity={0.5}
+                                strokeDasharray="2 2"
+                                ifOverflow="extendDomain"
+                            />
+                        ) : null;
+                        
+                        return (
+                            <React.Fragment key={`tl-group-${index}`}>
+                                <ReferenceLine 
+                                    key={`tl-${index}`}
+                                    segment={[{ x: startX, y: startY }, { x: endX, y: endY }]}
+                                    stroke={color}
+                                    strokeWidth={1.5}
+                                    ifOverflow="extendDomain"
+                                    label={{
+                                        value: `m=${tl.slope.toExponential(2)}`,
+                                        position: "insideTopRight",
+                                        fill: color,
+                                        fontSize: 10,
+                                        offset: 10,
+                                    }}
+                                />
+                                {channelJsx}
+                            </React.Fragment>
+                        );
+                    })}
+
+
                     {/* Latest Price Line */}
-                    {latestPrice !== null && (
+                    {!isHistorical && latestPrice !== null && (
                         <ReferenceLine
                             y={latestPrice}
                             stroke="rgb(252 211 77 / 0.9)" // Amber color
@@ -390,19 +472,37 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, patterns, hovere
 
                     <Bar dataKey="wick" shape={<CustomCandlestick />} />
 
-                    {/* Primary Timeframe Patterns */}
-                    {visiblePatterns.map((p, index) => (
-                        <ReferenceDot 
-                            key={`pattern-${p.index}`}
-                            x={p.candle.time}
-                            y={p.direction === SignalDirection.Bullish 
-                                ? p.candle.low - annotationOffset 
-                                : p.candle.high + annotationOffset
-                            }
-                            r={8}
-                            shape={<PatternAnnotation direction={p.direction} isHovered={p.index === hoveredPatternIndex} />}
-                        />
-                    ))}
+                    {/* Pattern Annotations */}
+                    {visiblePatterns.map((p) => {
+                        const isBreakoutOrBounce = p.name.includes('trendline');
+                        if (isBreakoutOrBounce) {
+                            return (
+                                <ReferenceDot 
+                                    key={`breakout-${p.index}`}
+                                    x={p.candle.time}
+                                    y={p.direction === SignalDirection.Bullish 
+                                        ? p.candle.low - annotationOffset * 1.2
+                                        : p.candle.high + annotationOffset * 1.2
+                                    }
+                                    r={8}
+                                    shape={<BreakoutAnnotation direction={p.direction} />}
+                                 />
+                            );
+                        }
+                        
+                        return (
+                             <ReferenceDot 
+                                key={`pattern-${p.index}`}
+                                x={p.candle.time}
+                                y={p.direction === SignalDirection.Bullish 
+                                    ? p.candle.low - annotationOffset 
+                                    : p.candle.high + annotationOffset
+                                }
+                                r={8}
+                                shape={<PatternAnnotation direction={p.direction} isHovered={p.index === hoveredPatternIndex} isKeySignal={p.isKeySignal} />}
+                            />
+                        );
+                    })}
 
                     {/* Higher Timeframe Patterns */}
                     {visibleHigherTimeframeSignals.map((p, index) => {

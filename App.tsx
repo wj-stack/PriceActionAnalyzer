@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PriceChart } from './components/PriceChart';
@@ -11,7 +12,7 @@ import { fetchKlines, fetchExchangeInfo, subscribeToKlineStream } from './servic
 import { analyzeCandles } from './services/patternRecognizer';
 import { getTradingStrategy } from './services/aiService';
 import { runBacktest, BacktestResult } from './services/backtestService';
-import type { Candle, DetectedPattern, BacktestStrategy, PriceAlert, MultiTimeframeAnalysis } from './types';
+import type { Candle, DetectedPattern, BacktestStrategy, PriceAlert, MultiTimeframeAnalysis, TrendLine } from './types';
 import { FALLBACK_SYMBOLS, ALL_PATTERNS, BACKTEST_INITIAL_CAPITAL, BACKTEST_COMMISSION_RATE, TIMEFRAMES } from './constants';
 import { LogoIcon } from './components/icons/LogoIcon';
 import { useLanguage } from './contexts/LanguageContext';
@@ -25,6 +26,7 @@ const App: React.FC = () => {
     const [timeframe, setTimeframe] = useState<string>('4h');
     const [candles, setCandles] = useState<Candle[]>([]);
     const [patterns, setPatterns] = useState<DetectedPattern[]>([]);
+    const [trendlines, setTrendlines] = useState<TrendLine[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
     const { t, locale } = useLanguage();
@@ -95,6 +97,11 @@ const App: React.FC = () => {
     const symbolRef = useRef(symbol);
     const [refreshCount, setRefreshCount] = useState(0);
 
+    const isHistorical = useMemo(() => {
+        const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+        return endDate.getTime() < fiveMinutesAgo;
+    }, [endDate]);
+
     useEffect(() => {
         symbolRef.current = symbol;
     }, [symbol]);
@@ -109,400 +116,323 @@ const App: React.FC = () => {
             } catch (e) {
                 console.error("Failed to fetch symbols from Binance API, using fallback list.", e);
                 setSymbolsList(FALLBACK_SYMBOLS);
-                setError(t('symbolFetchError'));
             } finally {
                 setIsSymbolsLoading(false);
             }
         };
-        loadSymbols();
-    }, [t]);
 
-    const performAnalysis = useCallback((candlesToAnalyze: Candle[]) => {
-        if (candlesToAnalyze.length > 0) {
-            const detectedPatterns = analyzeCandles(candlesToAnalyze);
-            setPatterns(detectedPatterns);
-        }
+        loadSymbols();
     }, []);
 
-    const handleWsUpdate = useCallback((newCandle: Candle, streamSymbol: string) => {
-        if (streamSymbol.toUpperCase() !== symbolRef.current.toUpperCase()) {
-            return; // Ignore updates from stale WebSockets for other symbols
-        }
-
-        setCandles(prevCandles => {
-            const lastCandle = prevCandles.length > 0 ? prevCandles[prevCandles.length - 1] : null;
-            let updatedCandles;
-
-            if (lastCandle && newCandle.time === lastCandle.time) {
-                updatedCandles = [...prevCandles.slice(0, -1), newCandle];
-                if (newCandle.isClosed && !lastCandle.isClosed) {
-                    performAnalysis(updatedCandles);
-                }
-                return updatedCandles;
-            } else if (!lastCandle || newCandle.time > lastCandle.time) {
-                updatedCandles = [...prevCandles, newCandle];
-                return updatedCandles;
-            }
-            
-            return prevCandles;
-        });
-    }, [performAnalysis]);
-
-    // Main data fetching and WebSocket subscription effect
+    // Effect for fetching main K-line data and setting up WebSocket
     useEffect(() => {
-        if (isSymbolsLoading || !symbol) return;
-
-        // Date range validation
-        if (endDate.getTime() <= startDate.getTime()) {
-            setError(t('dateRangeError'));
-            setCandles([]);
-            setPatterns([]);
-            setIsLoading(false);
-            wsCleanupRef.current?.();
-            wsCleanupRef.current = null;
-            return; // Abort fetch
-        }
-        
-        // Clear previous state when symbol or timeframe changes to prevent showing stale data.
-        setCandles([]);
-        setPatterns([]);
-        setBacktestResult(null);
-        setIsModalOpen(false);
-        setIsBacktestModalOpen(false);
-        setIsDecisionMakerModalOpen(false);
-
-        wsCleanupRef.current?.();
-        wsCleanupRef.current = null;
-
-        const loadDataAndSubscribe = async () => {
+        const loadKlines = async () => {
             setIsLoading(true);
             setError(null);
-            setStrategyCache(new Map());
             
             try {
-                const cacheKey = `${symbol}-${timeframe}`;
-                let historicalCandles: Candle[] = [];
-
-                if (klineCacheRef.current.has(cacheKey) && refreshCount === 0) {
-                    historicalCandles = klineCacheRef.current.get(cacheKey)!;
-                } else {
-                    const finalEndDate = new Date(endDate);
-                    finalEndDate.setHours(23, 59, 59, 999);
-                    historicalCandles = await fetchKlines(
-                        symbol,
-                        timeframe,
-                        2000, 
-                        startDate.getTime(),
-                        finalEndDate.getTime()
-                    );
-                    klineCacheRef.current.set(cacheKey, historicalCandles);
-                }
-
-                setCandles(historicalCandles);
-                performAnalysis(historicalCandles);
-
-                wsCleanupRef.current = subscribeToKlineStream(symbol, timeframe, handleWsUpdate);
+                const klineData = await fetchKlines(symbol, timeframe, 1500, startDate.getTime(), endDate.getTime());
                 
-                // Fetch multi-timeframe data
-                setIsMultiTimeframeLoading(true);
-                const analysisPromises = Array.from(secondaryTimeframes).map(async (tf) => {
-                    if (tf === timeframe) return null;
-                    const secondaryCandles = await fetchKlines(symbol, tf, 500, startDate.getTime(), endDate.getTime());
-                    const secondaryPatterns = analyzeCandles(secondaryCandles);
-                    return { timeframe: tf, patterns: secondaryPatterns };
-                });
-                 const results = (await Promise.all(analysisPromises)).filter((r): r is MultiTimeframeAnalysis => r !== null);
-                const sortedResults = results.sort((a, b) => TIMEFRAMES.findIndex(t => t.value === b.timeframe) - TIMEFRAMES.findIndex(t => t.value === a.timeframe));
-                setMultiTimeframeAnalysis(sortedResults);
-
-
+                if (klineData.length === 0) {
+                   setCandles([]);
+                   addToast({ message: t('noData'), type: 'error' });
+                } else {
+                   setCandles(klineData);
+                }
             } catch (err) {
-                setError(t('fetchError'));
-                console.error(err);
+                console.error("Failed to fetch k-line data:", err);
+                const errorMessage = err instanceof Error ? err.message : String(err);
+                setError(errorMessage);
                 setCandles([]);
             } finally {
                 setIsLoading(false);
-                setIsMultiTimeframeLoading(false);
             }
         };
 
-        loadDataAndSubscribe();
+        loadKlines();
+
+        if (wsCleanupRef.current) {
+            wsCleanupRef.current();
+            wsCleanupRef.current = null;
+        }
+
+        if (!isHistorical) {
+            wsCleanupRef.current = subscribeToKlineStream(symbol, timeframe, (updatedCandle, streamSymbol) => {
+                if (streamSymbol !== symbolRef.current) return;
+                setCandles(prevCandles => {
+                    if (prevCandles.length === 0) return [updatedCandle];
+                    const lastCandle = prevCandles[prevCandles.length - 1];
+                    if (updatedCandle.time === lastCandle.time) {
+                        const newCandles = [...prevCandles];
+                        newCandles[newCandles.length - 1] = updatedCandle;
+                        return newCandles;
+                    } else if (updatedCandle.time > lastCandle.time) {
+                        return [...prevCandles, updatedCandle];
+                    }
+                    return prevCandles;
+                });
+            });
+        }
 
         return () => {
-            wsCleanupRef.current?.();
+            if (wsCleanupRef.current) {
+                wsCleanupRef.current();
+                wsCleanupRef.current = null;
+            }
         };
+    }, [symbol, timeframe, startDate, endDate, refreshCount, isHistorical, addToast, t]);
 
-    }, [symbol, timeframe, startDate, endDate, t, isSymbolsLoading, refreshCount, handleWsUpdate, performAnalysis, secondaryTimeframes]);
-    
-
-    const displayedCandles = candles;
-    const displayedPatterns = useMemo(() => {
-        return patterns.filter(p => 
-            selectedPatterns.has(p.name) &&
-            selectedPriorities.has(p.priority)
-        );
-    }, [patterns, selectedPatterns, selectedPriorities]);
-
-
-    const addAlert = useCallback((symbol: string, price: number) => {
-        const newAlert: PriceAlert = { id: `alert-${Date.now()}`, price };
-        setAlerts(prev => ({
-            ...prev,
-            [symbol]: [...(prev[symbol] || []), newAlert]
-        }));
-    }, []);
-
-    const removeAlert = useCallback((symbol: string, id: string) => {
-        setAlerts(prev => {
-            const symbolAlerts = (prev[symbol] || []).filter(alert => alert.id !== id);
-            if (symbolAlerts.length === 0) {
-                const newAlerts = { ...prev };
-                delete newAlerts[symbol];
-                return newAlerts;
-            }
-            return {
-                ...prev,
-                [symbol]: symbolAlerts
-            };
-        });
-    }, []);
-
-    // Effect to check for triggered price alerts
+    // Effect for running analysis whenever candles change
     useEffect(() => {
-        if (candles.length === 0 || !symbol) return;
+        if (candles.length > 0) {
+            const { patterns: newPatterns, trendlines: newTrendlines } = analyzeCandles(candles);
+            setPatterns(newPatterns);
+            setTrendlines(newTrendlines);
+        } else {
+            setPatterns([]);
+            setTrendlines([]);
+        }
+    }, [candles]);
+
+    // Effect for multi-timeframe analysis
+    useEffect(() => {
+        const analyzeSecondaryTimeframes = async () => {
+            if (secondaryTimeframes.size === 0) {
+                setMultiTimeframeAnalysis([]);
+                return;
+            }
+            setIsMultiTimeframeLoading(true);
+            const analysisPromises = Array.from(secondaryTimeframes).map(async (tf) => {
+                try {
+                    const tfCandles = await fetchKlines(symbol, tf, 500, startDate.getTime(), endDate.getTime());
+                    const { patterns } = analyzeCandles(tfCandles);
+                    return { timeframe: tf, patterns };
+                } catch (e) {
+                    console.error(`Failed to analyze secondary timeframe ${tf}:`, e);
+                    return { timeframe: tf, patterns: [] };
+                }
+            });
+            const results = await Promise.all(analysisPromises);
+            setMultiTimeframeAnalysis(results);
+            setIsMultiTimeframeLoading(false);
+        };
+        analyzeSecondaryTimeframes();
+    }, [symbol, secondaryTimeframes, startDate, endDate, refreshCount]);
+
+    // Effect for handling AI strategy generation
+    useEffect(() => {
+        if (!selectedSignalForAI || !isModalOpen) return;
+
+        const generateStrategy = async () => {
+            const cacheKey = `${selectedSignalForAI.name}-${selectedSignalForAI.index}-${locale}`;
+            if (strategyCache.has(cacheKey)) {
+                setAiStrategy(strategyCache.get(cacheKey) ?? null);
+                return;
+            }
+
+            setIsAiLoading(true);
+            setAiStrategy(null);
+            try {
+                const strategy = await getTradingStrategy(candles, selectedSignalForAI, t, locale);
+                setAiStrategy(strategy);
+                setStrategyCache(prev => new Map(prev).set(cacheKey, strategy));
+            } catch (err) {
+                console.error("Error generating AI strategy:", err);
+                // FIX: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+                // Convert the unknown error to a string before using it.
+                setAiStrategy(String(err));
+            } finally {
+                setIsAiLoading(false);
+            }
+        };
+        generateStrategy();
+    }, [selectedSignalForAI, isModalOpen, candles, t, locale, strategyCache]);
+
+    const handleAddAlert = useCallback((symbol: string, price: number) => {
+        const newAlert = { id: Date.now().toString(), price };
+        setAlerts(prev => ({ ...prev, [symbol]: [...(prev[symbol] || []), newAlert] }));
+        addToast({ message: t('alertTriggeredMessage', { symbol, price: price.toString() }), type: 'info' });
+    }, [addToast, t]);
+
+    const handleRemoveAlert = useCallback((symbol: string, id: string) => {
+        setAlerts(prev => ({ ...prev, [symbol]: (prev[symbol] || []).filter(a => a.id !== id) }));
+    }, []);
+
+    // Effect for checking price alerts
+    useEffect(() => {
+        if (candles.length === 0) return;
+        const currentAlerts = alerts[symbol] || [];
+        if (currentAlerts.length === 0) return;
+
         const lastCandle = candles[candles.length - 1];
-        const activeAlerts = alerts[symbol] || [];
         
-        activeAlerts.forEach(alert => {
-            if (
-                (lastCandle.low <= alert.price && lastCandle.high >= alert.price) ||
-                (lastCandle.close >= alert.price && lastCandle.open <= alert.price) ||
-                (lastCandle.close <= alert.price && lastCandle.open >= alert.price)
-            ) {
-                addToast(t('alertTriggeredMessage').replace('{{symbol}}', symbol).replace('{{price}}', alert.price.toString()));
-                removeAlert(symbol, alert.id);
+        currentAlerts.forEach(alert => {
+            const triggered = lastCandle.low <= alert.price && lastCandle.high >= alert.price;
+
+            if (triggered) {
+                addToast({ message: t('alertTriggeredMessage', { symbol, price: alert.price.toString() }), type: 'info' });
+                handleRemoveAlert(symbol, alert.id);
             }
         });
-
-    }, [candles, symbol, alerts, addToast, removeAlert, t]);
-
-
-    const handleSignalClick = useCallback(async (pattern: DetectedPattern) => {
-        setSelectedSignalForAI(pattern);
-        setIsModalOpen(true);
-        
-        const cacheKey = `${symbol}-${timeframe}-${pattern.index}-${locale}`;
-        if (strategyCache.has(cacheKey)) {
-            setAiStrategy(strategyCache.get(cacheKey)!);
-            setIsAiLoading(false);
-            return;
-        }
-
-        setIsAiLoading(true);
-        setAiStrategy(null);
-        try {
-            const strategy = await getTradingStrategy(candles, pattern, t, locale);
-            setAiStrategy(strategy);
-            setStrategyCache(prevCache => new Map(prevCache).set(cacheKey, strategy));
-        } catch (err) {
-            console.error(err);
-            setAiStrategy(null);
-        } finally {
-            setIsAiLoading(false);
-        }
-    }, [symbol, timeframe, locale, strategyCache, candles, t]);
-
-    const runBacktestInternal = useCallback(() => {
-         return runBacktest(
-            candles,
-            displayedPatterns,
-            {
-                initialCapital: initialCapital,
-                commissionRate: BACKTEST_COMMISSION_RATE,
-                stopLoss: stopLoss,
-                takeProfit: takeProfit,
-                leverage: leverage,
-                positionSizePercent: positionSizePercent,
-                strategy: backtestStrategy,
-                rsiPeriod,
-                rsiOversold,
-                rsiOverbought,
-                bbPeriod,
-                bbStdDev,
-                useVolumeFilter,
-                volumeMaPeriod,
-                volumeThreshold,
-                atrPeriod,
-                atrMultiplierSL,
-                atrMultiplierTP,
-                useAtrPositionSizing,
-                riskPerTradePercent,
-            },
-            t
-        );
-    }, [candles, displayedPatterns, stopLoss, takeProfit, leverage, positionSizePercent, backtestStrategy, rsiPeriod, rsiOversold, rsiOverbought, bbPeriod, bbStdDev, useVolumeFilter, volumeMaPeriod, volumeThreshold, t, initialCapital, atrPeriod, atrMultiplierSL, atrMultiplierTP, useAtrPositionSizing, riskPerTradePercent]);
+    }, [candles, alerts, symbol, handleRemoveAlert, addToast, t]);
 
     const handleRunBacktest = useCallback(() => {
-        if (candles.length === 0) return;
+        if (candles.length < 2) {
+            // FIX: Expected 1 arguments, but got 2.
+            // The addToast function now expects a single object argument.
+            addToast({ message: 'Not enough data to run backtest', type: 'error' });
+            return;
+        }
         setIsBacktestRunning(true);
         setTimeout(() => {
-            const result = runBacktestInternal();
-            setBacktestResult(result);
-            setIsBacktestModalOpen(true);
-            setIsBacktestRunning(false);
+            try {
+                const settings = {
+                    initialCapital,
+                    commissionRate: BACKTEST_COMMISSION_RATE,
+                    stopLoss,
+                    takeProfit,
+                    strategy: backtestStrategy,
+                    leverage,
+                    positionSizePercent,
+                    rsiPeriod, rsiOversold, rsiOverbought,
+                    bbPeriod, bbStdDev,
+                    useVolumeFilter, volumeMaPeriod, volumeThreshold,
+                    atrPeriod, atrMultiplierSL, atrMultiplierTP,
+                    useAtrPositionSizing, riskPerTradePercent,
+                };
+                const result = runBacktest(
+                    candles, 
+                    patterns.filter(p => selectedPatterns.has(p.name) && selectedPriorities.has(p.priority)),
+                    settings,
+                    t
+                );
+                setBacktestResult(result);
+                setIsBacktestModalOpen(true);
+            } catch (error) {
+                console.error("Backtest failed:", error);
+                // FIX: Expected 1 arguments, but got 2.
+                // The addToast function now expects a single object argument.
+                addToast({ message: 'Backtest failed. See console for details.', type: 'error' });
+            } finally {
+                setIsBacktestRunning(false);
+            }
         }, 50);
-    }, [candles, runBacktestInternal]);
+    }, [
+        candles, patterns, selectedPatterns, selectedPriorities, t, addToast,
+        initialCapital, stopLoss, takeProfit, backtestStrategy, leverage, positionSizePercent,
+        rsiPeriod, rsiOversold, rsiOverbought, bbPeriod, bbStdDev, useVolumeFilter,
+        volumeMaPeriod, volumeThreshold, atrPeriod, atrMultiplierSL, atrMultiplierTP,
+        useAtrPositionSizing, riskPerTradePercent,
+    ]);
     
-    const handleRerunBacktest = useCallback(() => {
-        if (candles.length === 0) return;
-        setIsBacktestRunning(true);
-        setTimeout(() => {
-            const result = runBacktestInternal();
-            setBacktestResult(result);
-            setIsBacktestRunning(false);
-        }, 50);
-    }, [candles, runBacktestInternal]);
-
-
-    const onRefresh = useCallback(() => setRefreshCount(c => c + 1), []);
-    const onOpenDecisionMakerModal = useCallback(() => setIsDecisionMakerModalOpen(true), []);
+    const handleSignalClick = (pattern: DetectedPattern) => {
+        setSelectedSignalForAI(pattern);
+        setIsModalOpen(true);
+    };
 
     return (
-        <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
-            <ToastContainer />
-            <header className="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700 p-4 sticky top-0 z-20">
-                <div className="container mx-auto flex items-center justify-between">
+        <div className="bg-gray-900 text-white min-h-screen font-sans flex flex-col">
+            <header className="p-4 border-b border-gray-700">
+                <div className="flex items-center justify-between flex-wrap gap-y-4">
                     <div className="flex items-center gap-3">
-                         <LogoIcon />
-                        <h1 className="text-xl font-bold text-cyan-400">{t('appTitle')}</h1>
+                        <LogoIcon />
+                        <h1 className="text-xl font-bold text-gray-100">{t('appTitle')}</h1>
                     </div>
+                </div>
+                <div className="mt-4">
                     <ControlPanel
-                        symbols={symbolsList}
-                        isSymbolsLoading={isSymbolsLoading}
-                        symbol={symbol}
-                        setSymbol={setSymbol}
-                        timeframe={timeframe}
-                        setTimeframe={setTimeframe}
-                        isLoading={isLoading}
-                        onRefresh={onRefresh}
-                        startDate={startDate}
-                        setStartDate={setStartDate}
-                        endDate={endDate}
-                        setEndDate={setEndDate}
-                        selectedPatterns={selectedPatterns}
-                        setSelectedPatterns={setSelectedPatterns}
-                        selectedPriorities={selectedPriorities}
-                        setSelectedPriorities={setSelectedPriorities}
-                        secondaryTimeframes={secondaryTimeframes}
-                        setSecondaryTimeframes={setSecondaryTimeframes}
+                        symbols={symbolsList} isSymbolsLoading={isSymbolsLoading}
+                        symbol={symbol} setSymbol={setSymbol}
+                        timeframe={timeframe} setTimeframe={setTimeframe}
+                        isLoading={isLoading} onRefresh={() => setRefreshCount(c => c + 1)}
+                        startDate={startDate} setStartDate={setStartDate}
+                        endDate={endDate} setEndDate={setEndDate}
+                        selectedPatterns={selectedPatterns} setSelectedPatterns={setSelectedPatterns}
+                        selectedPriorities={selectedPriorities} setSelectedPriorities={setSelectedPriorities}
+                        secondaryTimeframes={secondaryTimeframes} setSecondaryTimeframes={setSecondaryTimeframes}
                         onRunBacktest={handleRunBacktest}
-                        onOpenDecisionMakerModal={onOpenDecisionMakerModal}
-                        alerts={alerts}
-                        addAlert={addAlert}
-                        removeAlert={removeAlert}
+                        onOpenDecisionMakerModal={() => setIsDecisionMakerModalOpen(true)}
+                        alerts={alerts} addAlert={handleAddAlert} removeAlert={handleRemoveAlert}
                     />
                 </div>
             </header>
 
-            <main className="container mx-auto p-4">
-                {error && <div className="bg-red-500/20 border border-red-500 text-red-300 p-4 rounded-md mb-4">{error}</div>}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                    <div className="lg:col-span-3 bg-gray-800 p-4 rounded-lg shadow-2xl border border-gray-700">
-                        {isLoading && candles.length === 0 ? (
-                             <div className="flex items-center justify-center h-[600px]">
-                                 <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-cyan-500"></div>
-                             </div>
-                        ) : (
-                            <PriceChart 
-                                data={displayedCandles} 
-                                patterns={displayedPatterns} 
-                                hoveredPatternIndex={hoveredPatternIndex}
-                                multiTimeframeAnalysis={multiTimeframeAnalysis}
-                                hoveredMultiTimeframePattern={hoveredMultiTimeframePattern}
-                            />
-                        )}
-                    </div>
-                    <div className="lg:col-span-1 bg-gray-800 p-4 rounded-lg shadow-2xl border border-gray-700">
-                        <SignalList 
-                            patterns={displayedPatterns} 
-                            isLoading={isLoading && candles.length === 0} 
-                            setHoveredPatternIndex={setHoveredPatternIndex}
-                            onSignalClick={handleSignalClick}
-                        />
-                    </div>
-                </div>
-
-                <div className="mt-6">
-                    <MultiTimeframePanel 
+            <main className="flex-grow p-6 grid grid-cols-1 xl:grid-cols-4 gap-6">
+                <div className="xl:col-span-3 flex flex-col gap-6">
+                     {error && (
+                        <div className="p-4 bg-red-500/20 text-red-300 border border-red-500/50 rounded-md">
+                            <p>{t('fetchError')}: {error}</p>
+                        </div>
+                    )}
+                    <PriceChart
+                        data={candles}
+                        patterns={patterns.filter(p => selectedPatterns.has(p.name) && selectedPriorities.has(p.priority))}
+                        trendlines={trendlines}
+                        hoveredPatternIndex={hoveredPatternIndex}
+                        multiTimeframeAnalysis={multiTimeframeAnalysis}
+                        hoveredMultiTimeframePattern={hoveredMultiTimeframePattern}
+                        isHistorical={isHistorical}
+                    />
+                     <MultiTimeframePanel
                         analysis={multiTimeframeAnalysis}
                         isLoading={isMultiTimeframeLoading}
                         setHoveredMultiTimeframePattern={setHoveredMultiTimeframePattern}
                     />
                 </div>
-
-                <StrategyModal 
-                    isOpen={isModalOpen}
-                    onClose={() => setIsModalOpen(false)}
-                    strategy={aiStrategy}
-                    isLoading={isAiLoading}
-                    pattern={selectedSignalForAI}
-                />
-                <AIDecisionMakerModal
-                    isOpen={isDecisionMakerModalOpen}
-                    onClose={() => setIsDecisionMakerModalOpen(false)}
-                    candles={candles}
-                    symbol={symbol}
-                    timeframe={timeframe}
-                />
-                <BacktestModal
-                    isOpen={isBacktestModalOpen}
-                    onClose={() => setIsBacktestModalOpen(false)}
-                    result={backtestResult}
-                    isBacktestRunning={isBacktestRunning}
-                    onRerun={handleRerunBacktest}
-                    initialCapital={initialCapital}
-                    setInitialCapital={setInitialCapital}
-                    stopLoss={stopLoss}
-                    setStopLoss={setStopLoss}
-                    takeProfit={takeProfit}
-                    setTakeProfit={setTakeProfit}
-                    leverage={leverage}
-                    setLeverage={setLeverage}
-                    positionSizePercent={positionSizePercent}
-                    setPositionSizePercent={setPositionSizePercent}
-                    backtestStrategy={backtestStrategy}
-                    setBacktestStrategy={setBacktestStrategy}
-                    rsiPeriod={rsiPeriod}
-                    setRsiPeriod={setRsiPeriod}
-                    rsiOversold={rsiOversold}
-                    setRsiOversold={setRsiOversold}
-                    rsiOverbought={rsiOverbought}
-                    setRsiOverbought={setRsiOverbought}
-                    bbPeriod={bbPeriod}
-                    setBbPeriod={setBbPeriod}
-                    bbStdDev={bbStdDev}
-                    setBbStdDev={setBbStdDev}
-                    useVolumeFilter={useVolumeFilter}
-                    setUseVolumeFilter={setUseVolumeFilter}
-                    volumeMaPeriod={volumeMaPeriod}
-                    setVolumeMaPeriod={setVolumeMaPeriod}
-                    volumeThreshold={volumeThreshold}
-                    setVolumeThreshold={setVolumeThreshold}
-                    atrPeriod={atrPeriod}
-                    setAtrPeriod={setAtrPeriod}
-                    atrMultiplierSL={atrMultiplierSL}
-                    setAtrMultiplierSL={setAtrMultiplierSL}
-                    atrMultiplierTP={atrMultiplierTP}
-                    setAtrMultiplierTP={setAtrMultiplierTP}
-                    useAtrPositionSizing={useAtrPositionSizing}
-                    setUseAtrPositionSizing={setUseAtrPositionSizing}
-                    riskPerTradePercent={riskPerTradePercent}
-                    setRiskPerTradePercent={setRiskPerTradePercent}
-                />
+                <div className="flex flex-col">
+                     <SignalList
+                        patterns={patterns.filter(p => selectedPatterns.has(p.name) && selectedPriorities.has(p.priority))}
+                        isLoading={isLoading}
+                        setHoveredPatternIndex={setHoveredPatternIndex}
+                        onSignalClick={handleSignalClick}
+                    />
+                </div>
             </main>
-             <footer className="text-center p-4 text-gray-500 text-sm mt-8">
-                <p>{t('footerText')}</p>
-            </footer>
+            
+            <StrategyModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                strategy={aiStrategy}
+                isLoading={isAiLoading}
+                pattern={selectedSignalForAI}
+            />
+
+             <BacktestModal
+                isOpen={isBacktestModalOpen}
+                onClose={() => setIsBacktestModalOpen(false)}
+                result={backtestResult}
+                isBacktestRunning={isBacktestRunning}
+                onRerun={handleRunBacktest}
+                initialCapital={initialCapital} setInitialCapital={setInitialCapital}
+                stopLoss={stopLoss} setStopLoss={setStopLoss}
+                takeProfit={takeProfit} setTakeProfit={setTakeProfit}
+                leverage={leverage} setLeverage={setLeverage}
+                positionSizePercent={positionSizePercent} setPositionSizePercent={setPositionSizePercent}
+                backtestStrategy={backtestStrategy} setBacktestStrategy={setBacktestStrategy}
+                rsiPeriod={rsiPeriod} setRsiPeriod={setRsiPeriod}
+                rsiOversold={rsiOversold} setRsiOversold={setRsiOversold}
+                rsiOverbought={rsiOverbought} setRsiOverbought={setRsiOverbought}
+                bbPeriod={bbPeriod} setBbPeriod={setBbPeriod}
+                bbStdDev={bbStdDev} setBbStdDev={setBbStdDev}
+                useVolumeFilter={useVolumeFilter} setUseVolumeFilter={setUseVolumeFilter}
+                volumeMaPeriod={volumeMaPeriod} setVolumeMaPeriod={setVolumeMaPeriod}
+                volumeThreshold={volumeThreshold} setVolumeThreshold={setVolumeThreshold}
+                atrPeriod={atrPeriod} setAtrPeriod={setAtrPeriod}
+                atrMultiplierSL={atrMultiplierSL} setAtrMultiplierSL={setAtrMultiplierSL}
+                atrMultiplierTP={atrMultiplierTP} setAtrMultiplierTP={setAtrMultiplierTP}
+                useAtrPositionSizing={useAtrPositionSizing} setUseAtrPositionSizing={setUseAtrPositionSizing}
+                riskPerTradePercent={riskPerTradePercent} setRiskPerTradePercent={setRiskPerTradePercent}
+            />
+            
+            <AIDecisionMakerModal
+                isOpen={isDecisionMakerModalOpen}
+                onClose={() => setIsDecisionMakerModalOpen(false)}
+                candles={candles}
+                symbol={symbol}
+                timeframe={timeframe}
+            />
+
+            <ToastContainer />
         </div>
     );
 };

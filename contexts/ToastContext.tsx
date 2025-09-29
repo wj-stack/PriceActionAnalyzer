@@ -1,4 +1,5 @@
 
+
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 
 export interface ToastMessage {
@@ -9,7 +10,8 @@ export interface ToastMessage {
 
 interface ToastContextType {
   toasts: ToastMessage[];
-  addToast: (message: string, type?: ToastMessage['type']) => void;
+  // FIX: Change signature to take a single object argument to resolve ambiguity.
+  addToast: (payload: { message: string; type?: ToastMessage['type'] }) => void;
   removeToast: (id: number) => void;
 }
 
@@ -18,7 +20,8 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const addToast = useCallback((message: string, type: ToastMessage['type'] = 'info') => {
+  const addToast = useCallback((payload: { message: string, type?: ToastMessage['type'] }) => {
+    const { message, type = 'info' } = payload;
     const id = Date.now();
     setToasts(prevToasts => [...prevToasts, { id, message, type }]);
   }, []);

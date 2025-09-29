@@ -142,13 +142,15 @@ const AIDecisionMakerModalComponent: React.FC<AIDecisionMakerModalProps> = ({ is
             const multiTimeframeDataPromises = timeframesToAnalyzeConfigs.map(async ({ tf, isPrimary }) => {
                 // For SPOT mode, if it's the primary timeframe, we use the candles already loaded in the app.
                 if (marketType === 'SPOT' && isPrimary) {
-                    const patterns = analyzeCandles(candles);
+                    // FIX: Destructure patterns from analyzeCandles result to match MultiTimeframeData type.
+                    const { patterns } = analyzeCandles(candles);
                     return { timeframe: tf, candles, patterns, isPrimary };
                 }
                 
                 // For FUTURES mode (all TFs) or contextual TFs in SPOT mode, fetch fresh data.
                 const fetchedCandles = await fetchKlines(symbol, tf, 200);
-                const patterns = analyzeCandles(fetchedCandles);
+                // FIX: Destructure patterns from analyzeCandles result to match MultiTimeframeData type.
+                const { patterns } = analyzeCandles(fetchedCandles);
                 return { timeframe: tf, candles: fetchedCandles, patterns, isPrimary };
             });
     

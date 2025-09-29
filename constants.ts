@@ -83,6 +83,10 @@ export const ALL_PATTERNS = [
     { name: 'bearishHarami', type: PatternType.Reversal, labelKey: 'bearishHarami' },
     { name: 'bullishOutsideBar', type: PatternType.Reversal, labelKey: 'bullishOutsideBar' },
     { name: 'bearishOutsideBar', type: PatternType.Reversal, labelKey: 'bearishOutsideBar' },
+    { name: 'morningStar', type: PatternType.Reversal, labelKey: 'morningStar' },
+    { name: 'eveningStar', type: PatternType.Reversal, labelKey: 'eveningStar' },
+    { name: 'towerBottom', type: PatternType.Reversal, labelKey: 'towerBottom' },
+    { name: 'towerTop', type: PatternType.Reversal, labelKey: 'towerTop' },
     
     // Trend Patterns
     { name: 'bullishBreakout', type: PatternType.Trend, labelKey: 'bullishBreakout' },
@@ -91,6 +95,10 @@ export const ALL_PATTERNS = [
     { name: 'emaPullbackBear', type: PatternType.Trend, labelKey: 'emaPullbackBear' },
     { name: 'threeSoldiers', type: PatternType.Trend, labelKey: 'threeSoldiers' },
     { name: 'threeCrows', type: PatternType.Trend, labelKey: 'threeCrows' },
+    { name: 'trendlineBreakoutUp', type: PatternType.Trend, labelKey: 'trendlineBreakoutUp' },
+    { name: 'trendlineBreakoutDown', type: PatternType.Trend, labelKey: 'trendlineBreakoutDown' },
+    { name: 'trendlineBounceBullish', type: PatternType.Trend, labelKey: 'trendlineBounceBullish' },
+    { name: 'trendlineBounceBearish', type: PatternType.Trend, labelKey: 'trendlineBounceBearish' },
 
     // Range Patterns
     { name: 'failedBullishBreakout', type: PatternType.Range, labelKey: 'failedBullishBreakout' },

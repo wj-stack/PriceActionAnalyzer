@@ -1,6 +1,5 @@
 
 
-
 export type BinanceKline = [
   number, // Kline open time
   string, // Open price
@@ -46,6 +45,12 @@ export interface DetectedPattern {
   direction: SignalDirection;
   description: string;
   priority: number; // Priority scale: 1 (Low) to 4 (Very High)
+  strengthScore: { // Contextual strength of the signal (0-100)
+    long: number;
+    short: number;
+  };
+  isKeySignal?: boolean;
+  anchorPoint?: TrendPoint;
 }
 
 export type BacktestStrategy = 'SIGNAL_ONLY' | 'RSI_FILTER' | 'BOLLINGER_BANDS' | 'ATR_TRAILING_STOP';
@@ -170,3 +175,24 @@ export interface MultiTimeframeAnalysis {
   timeframe: string;
   patterns: DetectedPattern[];
 }
+
+export interface TrendPoint {
+  index: number;
+  price: number;
+  time: number;
+}
+
+export interface TrendLine {
+  p1: TrendPoint;
+  p2: TrendPoint;
+  touches: TrendPoint[];
+  type: 'UP' | 'DOWN';
+  strength: number; // 1 to 5 scale based on touches and length
+  slope: number;
+  intercept: number;
+  channelLine?: {
+      intercept: number;
+  };
+}
+
+export type TrendDirection = 'UPTREND' | 'DOWNTREND' | 'RANGE';
