@@ -111,3 +111,4 @@ export const ALL_PATTERNS = [
 
 export const BACKTEST_INITIAL_CAPITAL = 10000; // in USDT
 export const BACKTEST_COMMISSION_RATE = 0.001; // 0.1% per trade side
+export const TICK_SIZE = 0.0001; // Generic tick size for price calculations

@@ -51,32 +51,42 @@ export interface DetectedPattern {
   };
   isKeySignal?: boolean;
   anchorPoint?: TrendPoint;
+  trendlineId?: string;
 }
 
-export type BacktestStrategy = 'SIGNAL_ONLY' | 'RSI_FILTER' | 'BOLLINGER_BANDS' | 'ATR_TRAILING_STOP';
+export type BacktestStrategy = 'STRUCTURAL' | 'SHORT_TERM';
 
 export interface BacktestSettings {
+    strategy: BacktestStrategy;
+    htfTimeframe?: string; // High timeframe for short-term strategy
     initialCapital: number;
     commissionRate: number;
-    stopLoss: number;
-    takeProfit: number;
-    strategy: BacktestStrategy;
     leverage: number;
-    positionSizePercent: number;
+    positionSizePercent: number; // For fixed % position sizing
+    minRiskReward: number;
+    useAtrTrailingStop: boolean;
+    useAtrPositionSizing: boolean;
+    riskPerTradePercent: number; // For risk-based position sizing
+    // Optional entry filters
     rsiPeriod?: number;
-    rsiOversold?: number;
-    rsiOverbought?: number;
-    bbPeriod?: number;
-    bbStdDev?: number;
+    rsiBullLevel?: number;
+    rsiBearLevel?: number;
     useVolumeFilter?: boolean;
     volumeMaPeriod?: number;
     volumeThreshold?: number;
+    // ATR settings for trailing stop or position sizing
     atrPeriod?: number;
-    atrMultiplierSL?: number;
-    atrMultiplierTP?: number;
-    useAtrPositionSizing?: boolean;
-    riskPerTradePercent?: number;
+    atrMultiplier?: number;
+    // New EMA Trend Filter
+    useEmaFilter?: boolean;
+    emaFastPeriod?: number;
+    emaSlowPeriod?: number;
+    // New ADX Trend Strength Filter
+    useAdxFilter?: boolean;
+    adxPeriod?: number;
+    adxThreshold?: number;
 }
+
 
 // FIX: Add missing AlphaToken type to resolve an import error in TokenListModal.tsx
 export interface AlphaToken {
@@ -170,7 +180,7 @@ export interface EquityDataPoint {
   time: number;
   equity: number;
 }
-export type TradeCloseReason = 'STOP_LOSS' | 'TAKE_PROFIT' | 'END_OF_DATA' | 'REVERSE_SIGNAL' | 'LIQUIDATION';
+export type TradeCloseReason = 'STOP_LOSS' | 'TAKE_PROFIT' | 'END_OF_DATA' | 'REVERSE_SIGNAL' | 'LIQUIDATION' | 'CANCELLED';
 export interface MultiTimeframeAnalysis {
   timeframe: string;
   patterns: DetectedPattern[];
@@ -190,6 +200,7 @@ export interface TrendPoint {
 }
 
 export interface TrendLine {
+  id: string;
   p1: TrendPoint;
   p2: TrendPoint;
   touches: TrendPoint[];
@@ -204,6 +215,17 @@ export interface TrendLine {
 }
 
 export type TrendDirection = 'UPTREND' | 'DOWNTREND' | 'RANGE';
+
+export interface PredictionResult {
+  status: 'PLAN_TRADE' | 'SKIP_SIGNAL';
+  reason: string;
+  pattern?: DetectedPattern;
+  direction?: 'LONG' | 'SHORT';
+  entryPrice?: number;
+  slPrice?: number;
+  tpPrice?: number;
+  rr?: number;
+}
 
 // Indicator types
 export interface BBands {

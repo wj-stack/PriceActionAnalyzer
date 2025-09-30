@@ -135,3 +135,74 @@ export const calculateATR = (candles: Candle[], period: number): (number | null)
 
     return atrValues;
 };
+
+const wildersSmoothing = (values: number[], period: number): (number | null)[] => {
+    const smoothed: (number | null)[] = new Array(values.length).fill(null);
+    if (values.length < period) return smoothed;
+
+    let sum = 0;
+    for (let i = 0; i < period; i++) {
+        sum += values[i];
+    }
+    smoothed[period - 1] = sum;
+
+    for (let i = period; i < values.length; i++) {
+        smoothed[i] = smoothed[i - 1]! - (smoothed[i - 1]! / period) + values[i];
+    }
+
+    return smoothed.map(val => val !== null ? val / period : null);
+};
+
+export const calculateADX = (candles: Candle[], period: number): (number | null)[] => {
+    const adxValues: (number | null)[] = new Array(candles.length).fill(null);
+    if (candles.length < period * 2) return adxValues;
+
+    const trs: number[] = [];
+    const plusDMs: number[] = [];
+    const minusDMs: number[] = [];
+
+    for (let i = 1; i < candles.length; i++) {
+        const prev = candles[i - 1];
+        const curr = candles[i];
+
+        const tr = Math.max(curr.high - curr.low, Math.abs(curr.high - prev.close), Math.abs(curr.low - prev.close));
+        trs.push(tr);
+
+        const upMove = curr.high - prev.high;
+        const downMove = prev.low - curr.low;
+
+        const plusDM = upMove > downMove && upMove > 0 ? upMove : 0;
+        const minusDM = downMove > upMove && downMove > 0 ? downMove : 0;
+        plusDMs.push(plusDM);
+        minusDMs.push(minusDM);
+    }
+
+    const smoothedTRs = wildersSmoothing(trs, period);
+    const smoothedPlusDMs = wildersSmoothing(plusDMs, period);
+    const smoothedMinusDMs = wildersSmoothing(minusDMs, period);
+
+    const dxs: number[] = [];
+    for (let i = period - 1; i < smoothedTRs.length; i++) {
+        const sTR = smoothedTRs[i];
+        const sPlusDM = smoothedPlusDMs[i];
+        const sMinusDM = smoothedMinusDMs[i];
+
+        if (sTR !== null && sPlusDM !== null && sMinusDM !== null && sTR > 0) {
+            const plusDI = (sPlusDM / sTR) * 100;
+            const minusDI = (sMinusDM / sTR) * 100;
+            const diSum = plusDI + minusDI;
+            const dx = diSum > 0 ? (Math.abs(plusDI - minusDI) / diSum) * 100 : 0;
+            dxs.push(dx);
+        } else {
+            dxs.push(0);
+        }
+    }
+
+    const adxResult = wildersSmoothing(dxs, period);
+
+    for (let i = 0; i < adxResult.length; i++) {
+        adxValues[i + (period - 1) * 2 + 1] = adxResult[i];
+    }
+    
+    return adxValues;
+};

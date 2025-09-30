@@ -5,14 +5,16 @@ import { SignalList } from './components/SignalList';
 import { StrategyModal } from './components/StrategyModal';
 import { BacktestModal } from './components/BacktestModal';
 import { AIDecisionMakerModal } from './components/AIDecisionMakerModal';
+import { PredictionModal } from './components/PredictionModal';
 import { ToastContainer } from './components/toast/ToastContainer';
 import { fetchKlines, fetchExchangeInfo, subscribeToKlineStream } from './services/binanceService';
 import { analyzeCandles } from './services/patternRecognizer';
 import { getTradingStrategy } from './services/aiService';
 import { runBacktest, BacktestResult } from './services/backtestService';
-import { calculateBollingerBands, calculateEMA, calculateRSI } from './services/indicatorService';
-import type { Candle, DetectedPattern, BacktestStrategy, PriceAlert, MultiTimeframeAnalysis, TrendLine, IndicatorData } from './types';
-import { FALLBACK_SYMBOLS, ALL_PATTERNS, BACKTEST_INITIAL_CAPITAL, BACKTEST_COMMISSION_RATE, TIMEFRAMES } from './constants';
+import { calculateBollingerBands, calculateEMA, calculateRSI, calculateSMA, calculateADX } from './services/indicatorService';
+import type { Candle, DetectedPattern, PriceAlert, MultiTimeframeAnalysis, TrendLine, IndicatorData, TrendDirection, TrendPoint, BacktestStrategy, PredictionResult } from './types';
+import { SignalDirection } from './types';
+import { FALLBACK_SYMBOLS, ALL_PATTERNS, BACKTEST_INITIAL_CAPITAL, BACKTEST_COMMISSION_RATE, TIMEFRAMES, TICK_SIZE } from './constants';
 import { LogoIcon } from './components/icons/LogoIcon';
 import { useLanguage } from './contexts/LanguageContext';
 import { useToast } from './contexts/ToastContext';
@@ -22,10 +24,11 @@ const App: React.FC = () => {
     const [symbolsList, setSymbolsList] = useState<{ value: string; label: string; baseAssetLogoUrl?: string; quoteAssetLogoUrl?: string; isAlpha?: boolean; }[]>([]);
     const [isSymbolsLoading, setIsSymbolsLoading] = useState<boolean>(true);
     const [symbol, setSymbol] = useState<string>('BTCUSDT');
-    const [timeframe, setTimeframe] = useState<string>('4h');
+    const [timeframe, setTimeframe] = useState<string>('15m');
     const [candles, setCandles] = useState<Candle[]>([]);
     const [patterns, setPatterns] = useState<DetectedPattern[]>([]);
     const [trendlines, setTrendlines] = useState<TrendLine[]>([]);
+    const [marketContext, setMarketContext] = useState<{ trend: TrendDirection; swingHighs: TrendPoint[]; swingLows: TrendPoint[] }>({ trend: 'RANGE', swingHighs: [], swingLows: []});
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
     const { t, locale } = useLanguage();
@@ -57,29 +60,40 @@ const App: React.FC = () => {
     // AI Decision Maker State
     const [isDecisionMakerModalOpen, setIsDecisionMakerModalOpen] = useState<boolean>(false);
 
+    // Prediction State
+    const [isPredictionModalOpen, setIsPredictionModalOpen] = useState<boolean>(false);
+    const [predictionResult, setPredictionResult] = useState<PredictionResult | null>(null);
+
     // Backtest State
     const [isBacktestModalOpen, setIsBacktestModalOpen] = useState<boolean>(false);
     const [isBacktestRunning, setIsBacktestRunning] = useState<boolean>(false);
     const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
+    const [showTradesOnChart, setShowTradesOnChart] = useState<boolean>(false);
+    const [backtestStrategy, setBacktestStrategy] = useState<BacktestStrategy>('STRUCTURAL');
+    const [htfTimeframe, setHtfTimeframe] = useState<string>('1h');
     const [initialCapital, setInitialCapital] = useState<number>(BACKTEST_INITIAL_CAPITAL);
-    const [stopLoss, setStopLoss] = useState<number>(2);
-    const [takeProfit, setTakeProfit] = useState<number>(4);
     const [leverage, setLeverage] = useState<number>(1);
-    const [positionSizePercent, setPositionSizePercent] = useState<number>(10);
-    const [backtestStrategy, setBacktestStrategy] = useState<BacktestStrategy>('SIGNAL_ONLY');
+    const [positionSizePercent, setPositionSizePercent] = useState<number>(1);
+    const [minRiskReward, setMinRiskReward] = useState<number>(1.5);
+    const [useAtrTrailingStop, setUseAtrTrailingStop] = useState<boolean>(false);
     const [rsiPeriod, setRsiPeriod] = useState<number>(14);
-    const [rsiOversold, setRsiOversold] = useState<number>(30);
-    const [rsiOverbought, setRsiOverbought] = useState<number>(70);
-    const [bbPeriod, setBbPeriod] = useState<number>(20);
-    const [bbStdDev, setBbStdDev] = useState<number>(2);
+    const [rsiBullLevel, setRsiBullLevel] = useState<number>(40);
+    const [rsiBearLevel, setRsiBearLevel] = useState<number>(60);
     const [useVolumeFilter, setUseVolumeFilter] = useState<boolean>(false);
     const [volumeMaPeriod, setVolumeMaPeriod] = useState<number>(20);
     const [volumeThreshold, setVolumeThreshold] = useState<number>(1.5);
     const [atrPeriod, setAtrPeriod] = useState<number>(14);
-    const [atrMultiplierSL, setAtrMultiplierSL] = useState<number>(2);
-    const [atrMultiplierTP, setAtrMultiplierTP] = useState<number>(3);
+    const [atrMultiplier, setAtrMultiplier] = useState<number>(2);
     const [useAtrPositionSizing, setUseAtrPositionSizing] = useState<boolean>(false);
     const [riskPerTradePercent, setRiskPerTradePercent] = useState<number>(1);
+    // New Advanced Filters State
+    const [useEmaFilter, setUseEmaFilter] = useState<boolean>(true);
+    const [emaFastPeriod, setEmaFastPeriod] = useState<number>(20);
+    const [emaSlowPeriod, setEmaSlowPeriod] = useState<number>(50);
+    const [useAdxFilter, setUseAdxFilter] = useState<boolean>(true);
+    const [adxPeriod, setAdxPeriod] = useState<number>(14);
+    const [adxThreshold, setAdxThreshold] = useState<number>(20);
+
 
     // Price Alert & Drawing State
     const [alerts, setAlerts] = useState<Record<string, PriceAlert[]>>({});
@@ -93,12 +107,15 @@ const App: React.FC = () => {
     const [isMultiTimeframeLoading, setIsMultiTimeframeLoading] = useState<boolean>(false);
     const [hoveredMultiTimeframePattern, setHoveredMultiTimeframePattern] = useState<DetectedPattern | null>(null);
 
-    // Indicators State
+    // Indicators & Chart Display State
     const [indicators, setIndicators] = useState<Record<string, boolean>>({
         'ema-20': true,
         'bb-20-2': false,
         'rsi-14': true,
     });
+    const [showSwingLines, setShowSwingLines] = useState<boolean>(true);
+    const [showTrendlines, setShowTrendlines] = useState<boolean>(true);
+    const [maxTrendlineLength, setMaxTrendlineLength] = useState<number>(250);
     
     // WebSocket and Data Caching Refs
     const wsCleanupRef = useRef<(() => void) | null>(null);
@@ -210,15 +227,18 @@ const App: React.FC = () => {
     // Effect for running analysis whenever candles or HTF trendlines change
     useEffect(() => {
         if (candles.length > 0) {
-            const { patterns: newPatterns, trendlines: newTrendlines } = analyzeCandles(candles, multiTimeframeTrendlines);
+            const analysisOptions = { maxTrendlineLength };
+            const { patterns: newPatterns, trendlines: newTrendlines, trend, swingHighs, swingLows } = analyzeCandles(candles, multiTimeframeTrendlines, analysisOptions);
             const taggedTrendlines = newTrendlines.map(tl => ({ ...tl, timeframe: timeframe }));
             setPatterns(newPatterns);
             setTrendlines(taggedTrendlines);
+            setMarketContext({ trend, swingHighs, swingLows });
         } else {
             setPatterns([]);
             setTrendlines([]);
+             setMarketContext({ trend: 'RANGE', swingHighs: [], swingLows: [] });
         }
-    }, [candles, multiTimeframeTrendlines, timeframe]);
+    }, [candles, multiTimeframeTrendlines, timeframe, maxTrendlineLength]);
 
     // Effect for multi-timeframe analysis
     useEffect(() => {
@@ -229,10 +249,11 @@ const App: React.FC = () => {
                 return;
             }
             setIsMultiTimeframeLoading(true);
+            const analysisOptions = { maxTrendlineLength };
             const analysisPromises = Array.from(secondaryTimeframes).map(async (tf) => {
                 try {
                     const tfCandles = await fetchKlines(symbol, tf, 500, startDate.getTime(), endDate.getTime());
-                    const { patterns, trendlines, trend, rsi } = analyzeCandles(tfCandles);
+                    const { patterns, trendlines, trend, rsi } = analyzeCandles(tfCandles, [], analysisOptions);
                     const taggedTrendlines = trendlines.map(tl => ({ ...tl, timeframe: tf }));
                     return { timeframe: tf, patterns, trendlines: taggedTrendlines, trend, rsi };
                 } catch (e) {
@@ -247,7 +268,7 @@ const App: React.FC = () => {
             setIsMultiTimeframeLoading(false);
         };
         analyzeSecondaryTimeframes();
-    }, [symbol, secondaryTimeframes, startDate, endDate, refreshCount]);
+    }, [symbol, secondaryTimeframes, startDate, endDate, refreshCount, maxTrendlineLength]);
 
     // Effect for handling AI strategy generation
     useEffect(() => {
@@ -268,7 +289,13 @@ const App: React.FC = () => {
                 setStrategyCache(prev => new Map(prev).set(cacheKey, strategy));
             } catch (err) {
                 console.error("Error generating AI strategy:", err);
-                setAiStrategy(err instanceof Error ? err.message : String(err));
+                // FIX: Refactored error handling to be more explicit for the type checker.
+                // An if/else block is used to safely handle the 'unknown' type of the caught error variable.
+                if (err instanceof Error) {
+                    setAiStrategy(err.message);
+                } else {
+                    setAiStrategy(String(err));
+                }
             } finally {
                 setIsAiLoading(false);
             }
@@ -319,36 +346,63 @@ const App: React.FC = () => {
         });
     }, [candles, alerts, symbol, handleRemoveAlert, addToast, t]);
 
-    const handleRunBacktest = useCallback(() => {
+    const handleRunBacktest = useCallback(async () => {
         if (candles.length < 2) {
             addToast({ message: 'Not enough data to run backtest', type: 'error' });
             return;
         }
         setIsBacktestRunning(true);
+        setBacktestResult(null);
+        setShowTradesOnChart(false);
+
+        let htfCandles: Candle[] | undefined = undefined;
+        if (backtestStrategy === 'SHORT_TERM') {
+            try {
+                htfCandles = await fetchKlines(symbol, htfTimeframe, 1500, startDate.getTime(), endDate.getTime());
+                 if (htfCandles.length === 0) {
+                   addToast({ message: `No data for HTF (${htfTimeframe}), cannot run backtest.`, type: 'error' });
+                   setIsBacktestRunning(false);
+                   return;
+                }
+            } catch (e) {
+                console.error("Failed to fetch HTF data for backtest:", e);
+                addToast({ message: `Failed to fetch data for HTF (${htfTimeframe}).`, type: 'error' });
+                setIsBacktestRunning(false);
+                return;
+            }
+        }
+        
+        // Use a short timeout to allow the UI to update to the "running" state
         setTimeout(() => {
             try {
                 const settings = {
+                    strategy: backtestStrategy,
+                    htfTimeframe,
                     initialCapital,
                     commissionRate: BACKTEST_COMMISSION_RATE,
-                    stopLoss,
-                    takeProfit,
-                    strategy: backtestStrategy,
                     leverage,
                     positionSizePercent,
-                    rsiPeriod, rsiOversold, rsiOverbought,
-                    bbPeriod, bbStdDev,
+                    minRiskReward,
+                    useAtrTrailingStop,
+                    useAtrPositionSizing,
+                    riskPerTradePercent,
+                    rsiPeriod, rsiBullLevel, rsiBearLevel,
                     useVolumeFilter, volumeMaPeriod, volumeThreshold,
-                    atrPeriod, atrMultiplierSL, atrMultiplierTP,
-                    useAtrPositionSizing, riskPerTradePercent,
+                    atrPeriod, atrMultiplier,
+                    useEmaFilter, emaFastPeriod, emaSlowPeriod,
+                    useAdxFilter, adxPeriod, adxThreshold,
                 };
                 const result = runBacktest(
                     candles, 
                     patterns.filter(p => selectedPatterns.has(p.name) && selectedPriorities.has(p.priority)),
+                    marketContext,
                     settings,
-                    t
+                    t,
+                    htfCandles
                 );
                 setBacktestResult(result);
                 setIsBacktestModalOpen(true);
+                setShowTradesOnChart(true);
             } catch (error) {
                 console.error("Backtest failed:", error);
                 addToast({ message: 'Backtest failed. See console for details.', type: 'error' });
@@ -357,12 +411,130 @@ const App: React.FC = () => {
             }
         }, 50);
     }, [
-        candles, patterns, selectedPatterns, selectedPriorities, t, addToast,
-        initialCapital, stopLoss, takeProfit, backtestStrategy, leverage, positionSizePercent,
-        rsiPeriod, rsiOversold, rsiOverbought, bbPeriod, bbStdDev, useVolumeFilter,
-        volumeMaPeriod, volumeThreshold, atrPeriod, atrMultiplierSL, atrMultiplierTP,
-        useAtrPositionSizing, riskPerTradePercent,
+        candles, patterns, selectedPatterns, selectedPriorities, marketContext, t, addToast, symbol, timeframe, startDate, endDate,
+        backtestStrategy, htfTimeframe,
+        initialCapital, leverage, positionSizePercent, minRiskReward, useAtrTrailingStop,
+        useAtrPositionSizing, riskPerTradePercent, rsiPeriod, rsiBullLevel, rsiBearLevel,
+        useVolumeFilter, volumeMaPeriod, volumeThreshold, atrPeriod, atrMultiplier,
+        useEmaFilter, emaFastPeriod, emaSlowPeriod, useAdxFilter, adxPeriod, adxThreshold
     ]);
+    
+    const handlePredictSignal = useCallback(() => {
+        if (candles.length === 0) {
+            setPredictionResult({ status: 'SKIP_SIGNAL', reason: t('noData') });
+            setIsPredictionModalOpen(true);
+            return;
+        }
+
+        const lastIndex = candles.length - 1;
+        const lastCandle = candles[lastIndex];
+        const lastPattern = patterns.find(p => p.index === lastIndex);
+
+        if (!lastPattern) {
+            setPredictionResult({ status: 'SKIP_SIGNAL', reason: t('noSignalOnLastCandle') });
+            setIsPredictionModalOpen(true);
+            return;
+        }
+
+        // Check if the signal is selected in the active filters
+        if (!selectedPatterns.has(lastPattern.name) || !selectedPriorities.has(lastPattern.priority)) {
+            setPredictionResult({
+                status: 'SKIP_SIGNAL',
+                reason: t('predictionReasonSignalFiltered', { signalName: t(lastPattern.name) }),
+                pattern: lastPattern,
+            });
+            setIsPredictionModalOpen(true);
+            return;
+        }
+
+        // --- Run all validation checks from backtester ---
+        let skipReason = '';
+
+        // 1. Technical Indicators Check
+        if (useEmaFilter) {
+            const emaFast = calculateEMA(candles, emaFastPeriod)[lastIndex];
+            const emaSlow = calculateEMA(candles, emaSlowPeriod)[lastIndex];
+            if (emaFast === null || emaSlow === null) skipReason = t('predictionReasonIndicatorError', { indicator: 'EMA' });
+            else if (lastPattern.direction === SignalDirection.Bullish && emaFast <= emaSlow) skipReason = t('predictionReasonEma', { fast: emaFastPeriod, slow: emaSlowPeriod, comparison: '<=' });
+            else if (lastPattern.direction === SignalDirection.Bearish && emaFast >= emaSlow) skipReason = t('predictionReasonEma', { fast: emaFastPeriod, slow: emaSlowPeriod, comparison: '>=' });
+        }
+        if (!skipReason && useAdxFilter) {
+            const adx = calculateADX(candles, adxPeriod)[lastIndex];
+            if (adx === null) skipReason = t('predictionReasonIndicatorError', { indicator: 'ADX' });
+            else if (adx < adxThreshold) skipReason = t('predictionReasonAdx', { threshold: adxThreshold });
+        }
+        if (!skipReason && rsiPeriod > 0) {
+            const rsi = calculateRSI(candles, rsiPeriod)[lastIndex];
+            if (rsi === null) skipReason = t('predictionReasonIndicatorError', { indicator: 'RSI' });
+            else if (lastPattern.direction === SignalDirection.Bullish && rsi < rsiBullLevel) skipReason = t('predictionReasonRsi', { level: rsiBullLevel, comparison: '<' });
+            else if (lastPattern.direction === SignalDirection.Bearish && rsi > rsiBearLevel) skipReason = t('predictionReasonRsi', { level: rsiBearLevel, comparison: '>' });
+        }
+        if (!skipReason && useVolumeFilter) {
+            const volumeMA = calculateSMA(candles.map(c => c.volume), volumeMaPeriod)[lastIndex];
+            if (volumeMA === null) skipReason = t('predictionReasonIndicatorError', { indicator: 'Volume MA' });
+            else if (lastCandle.volume <= volumeMA * volumeThreshold) skipReason = t('predictionReasonVolume', { threshold: volumeThreshold });
+        }
+
+        if (skipReason) {
+            setPredictionResult({ status: 'SKIP_SIGNAL', reason: skipReason, pattern: lastPattern });
+            setIsPredictionModalOpen(true);
+            return;
+        }
+
+        // 2. Market Context Trend Check
+        const direction = lastPattern.direction === SignalDirection.Bullish ? 'LONG' : 'SHORT';
+        if ((marketContext.trend === 'UPTREND' && direction === 'SHORT') || (marketContext.trend === 'DOWNTREND' && direction === 'LONG')) {
+            setPredictionResult({ status: 'SKIP_SIGNAL', reason: t('log_plan_skipped_trend', { direction, signal: t(lastPattern.name), trend: marketContext.trend }), pattern: lastPattern });
+            setIsPredictionModalOpen(true);
+            return;
+        }
+
+        // 3. R:R Check
+        const signalCandle = lastPattern.candle;
+        const entryPrice = direction === 'LONG' ? signalCandle.high + TICK_SIZE : signalCandle.low - TICK_SIZE;
+        const slPrice = direction === 'LONG' ? signalCandle.low - TICK_SIZE : signalCandle.high + TICK_SIZE;
+        
+        const nextTarget = direction === 'LONG'
+            ? [...marketContext.swingHighs].sort((a,b) => a.price - b.price).find(sh => sh.price > entryPrice)
+            : [...marketContext.swingLows].sort((a,b) => b.price - a.price).find(sl => sl.price < entryPrice);
+
+        if (!nextTarget) {
+            setPredictionResult({ status: 'SKIP_SIGNAL', reason: t('log_plan_skipped_target', { direction, signal: t(lastPattern.name) }), pattern: lastPattern });
+            setIsPredictionModalOpen(true);
+            return;
+        }
+        
+        const tpPrice = nextTarget.price;
+        const risk = Math.abs(entryPrice - slPrice);
+        if (risk === 0) {
+            setPredictionResult({ status: 'SKIP_SIGNAL', reason: t('predictionReasonInvalidRisk'), pattern: lastPattern });
+            setIsPredictionModalOpen(true);
+            return;
+        }
+        const reward = Math.abs(tpPrice - entryPrice);
+        const rr = reward / risk;
+
+        if (rr < minRiskReward) {
+            setPredictionResult({ 
+                status: 'SKIP_SIGNAL', 
+                reason: t('log_plan_skipped_rr', { direction, signal: t(lastPattern.name), rr: rr.toFixed(2), minRr: minRiskReward.toFixed(2) }), 
+                pattern: lastPattern,
+                direction, entryPrice, slPrice, tpPrice, rr
+            });
+            setIsPredictionModalOpen(true);
+            return;
+        }
+
+        // If all checks pass:
+        setPredictionResult({
+            status: 'PLAN_TRADE',
+            reason: t('predictionReasonValid', { rr: rr.toFixed(2), minRr: minRiskReward.toFixed(2) }),
+            pattern: lastPattern,
+            direction, entryPrice, slPrice, tpPrice, rr
+        });
+        setIsPredictionModalOpen(true);
+
+    }, [candles, patterns, selectedPatterns, selectedPriorities, marketContext, t, minRiskReward, useEmaFilter, emaFastPeriod, emaSlowPeriod, useAdxFilter, adxPeriod, adxThreshold, rsiPeriod, rsiBullLevel, rsiBearLevel, useVolumeFilter, volumeMaPeriod, volumeThreshold]);
     
     const handleSignalClick = (pattern: DetectedPattern) => {
         setSelectedSignalForAI(pattern);
@@ -400,9 +572,13 @@ const App: React.FC = () => {
                         secondaryTimeframes={secondaryTimeframes} setSecondaryTimeframes={setSecondaryTimeframes}
                         onRunBacktest={handleRunBacktest}
                         onOpenDecisionMakerModal={() => setIsDecisionMakerModalOpen(true)}
+                        onPredictSignal={handlePredictSignal}
                         alerts={alerts} addAlert={handleAddAlert} removeAlert={handleRemoveAlert}
                         indicators={indicators} setIndicators={setIndicators}
                         drawingMode={drawingMode} setDrawingMode={setDrawingMode}
+                        showSwingLines={showSwingLines} setShowSwingLines={setShowSwingLines}
+                        showTrendlines={showTrendlines} setShowTrendlines={setShowTrendlines}
+                        maxTrendlineLength={maxTrendlineLength} setMaxTrendlineLength={setMaxTrendlineLength}
                     />
                 </div>
             </header>
@@ -418,17 +594,21 @@ const App: React.FC = () => {
                         data={candles}
                         patterns={patterns.filter(p => selectedPatterns.has(p.name) && selectedPriorities.has(p.priority))}
                         trendlines={[...trendlines, ...multiTimeframeTrendlines]}
+                        swingHighs={marketContext.swingHighs}
+                        swingLows={marketContext.swingLows}
                         timeframe={timeframe}
                         hoveredPatternIndex={hoveredPatternIndex}
                         multiTimeframeAnalysis={filteredMultiTimeframeAnalysis}
                         hoveredMultiTimeframePattern={hoveredMultiTimeframePattern}
                         isHistorical={isHistorical}
                         indicatorData={indicatorData}
-                        tradeLog={backtestResult?.tradeLog ?? []}
+                        tradeLog={showTradesOnChart ? (backtestResult?.tradeLog ?? []) : []}
                         horizontalLines={horizontalLines}
                         onAddHorizontalLine={handleAddHorizontalLine}
                         onRemoveHorizontalLine={handleRemoveHorizontalLine}
                         drawingMode={drawingMode}
+                        showSwingLines={showSwingLines}
+                        showTrendlines={showTrendlines}
                     />
                      <MultiTimeframePanel
                         analysis={filteredMultiTimeframeAnalysis}
@@ -456,29 +636,42 @@ const App: React.FC = () => {
 
              <BacktestModal
                 isOpen={isBacktestModalOpen}
-                onClose={() => setIsBacktestModalOpen(false)}
+                onClose={() => {
+                    setIsBacktestModalOpen(false);
+                    setShowTradesOnChart(false);
+                }}
                 result={backtestResult}
                 isBacktestRunning={isBacktestRunning}
                 onRerun={handleRunBacktest}
+                backtestStrategy={backtestStrategy} setBacktestStrategy={setBacktestStrategy}
+                htfTimeframe={htfTimeframe} setHtfTimeframe={setHtfTimeframe}
                 initialCapital={initialCapital} setInitialCapital={setInitialCapital}
-                stopLoss={stopLoss} setStopLoss={setStopLoss}
-                takeProfit={takeProfit} setTakeProfit={setTakeProfit}
                 leverage={leverage} setLeverage={setLeverage}
                 positionSizePercent={positionSizePercent} setPositionSizePercent={setPositionSizePercent}
-                backtestStrategy={backtestStrategy} setBacktestStrategy={setBacktestStrategy}
+                minRiskReward={minRiskReward} setMinRiskReward={setMinRiskReward}
+                useAtrTrailingStop={useAtrTrailingStop} setUseAtrTrailingStop={setUseAtrTrailingStop}
                 rsiPeriod={rsiPeriod} setRsiPeriod={setRsiPeriod}
-                rsiOversold={rsiOversold} setRsiOversold={setRsiOversold}
-                rsiOverbought={rsiOverbought} setRsiOverbought={setRsiOverbought}
-                bbPeriod={bbPeriod} setBbPeriod={setBbPeriod}
-                bbStdDev={bbStdDev} setBbStdDev={setBbStdDev}
+                rsiBullLevel={rsiBullLevel} setRsiBullLevel={setRsiBullLevel}
+                rsiBearLevel={rsiBearLevel} setRsiBearLevel={setRsiBearLevel}
                 useVolumeFilter={useVolumeFilter} setUseVolumeFilter={setUseVolumeFilter}
                 volumeMaPeriod={volumeMaPeriod} setVolumeMaPeriod={setVolumeMaPeriod}
                 volumeThreshold={volumeThreshold} setVolumeThreshold={setVolumeThreshold}
                 atrPeriod={atrPeriod} setAtrPeriod={setAtrPeriod}
-                atrMultiplierSL={atrMultiplierSL} setAtrMultiplierSL={setAtrMultiplierSL}
-                atrMultiplierTP={atrMultiplierTP} setAtrMultiplierTP={setAtrMultiplierTP}
+                atrMultiplier={atrMultiplier} setAtrMultiplier={setAtrMultiplier}
                 useAtrPositionSizing={useAtrPositionSizing} setUseAtrPositionSizing={setUseAtrPositionSizing}
                 riskPerTradePercent={riskPerTradePercent} setRiskPerTradePercent={setRiskPerTradePercent}
+                useEmaFilter={useEmaFilter} setUseEmaFilter={setUseEmaFilter}
+                emaFastPeriod={emaFastPeriod} setEmaFastPeriod={setEmaFastPeriod}
+                emaSlowPeriod={emaSlowPeriod} setEmaSlowPeriod={setEmaSlowPeriod}
+                useAdxFilter={useAdxFilter} setUseAdxFilter={setUseAdxFilter}
+                adxPeriod={adxPeriod} setAdxPeriod={setAdxPeriod}
+                adxThreshold={adxThreshold} setAdxThreshold={setAdxThreshold}
+                candles={candles}
+                allPatternsForBacktest={patterns.filter(p => selectedPatterns.has(p.name) && selectedPriorities.has(p.priority))}
+                marketContext={marketContext}
+                trendlines={trendlines}
+                timeframe={timeframe}
+                indicatorData={indicatorData}
             />
             
             <AIDecisionMakerModal
@@ -487,6 +680,12 @@ const App: React.FC = () => {
                 candles={candles}
                 symbol={symbol}
                 timeframe={timeframe}
+            />
+
+            <PredictionModal
+                isOpen={isPredictionModalOpen}
+                onClose={() => setIsPredictionModalOpen(false)}
+                result={predictionResult}
             />
 
             <ToastContainer />
