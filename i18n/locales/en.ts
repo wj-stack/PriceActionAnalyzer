@@ -44,6 +44,12 @@ export const en = {
   'removeAlert': 'Remove Alert',
   'alertTriggeredMessage': '🔔 Price Alert: {{symbol}} has reached {{price}}!',
   'selectTimeframes': 'Select Context Timeframes',
+  'indicators': 'Indicators',
+  'indicator-ema-20': 'EMA (20)',
+  'indicator-bb-20-2': 'Bollinger Bands (20, 2)',
+  'indicator-rsi-14': 'RSI (14)',
+  'drawingTools': 'Drawing Tools',
+  'drawHLine': 'Draw Horizontal Line',
 
   // PriceChart.tsx
   'noData': 'No data available.',
@@ -57,6 +63,7 @@ export const en = {
   'tooltipLow': 'L',
   'tooltipClose': 'C',
   'tooltipVolume': 'Vol',
+  'rsiIndicator': 'RSI (14)',
   
   // SignalList.tsx
   'detectedSignals': 'Detected Signals',
@@ -206,6 +213,10 @@ export const en = {
   'trendlineBreakoutDown': 'Trendline Breakdown (Down)',
   'trendlineBounceBullish': 'Trendline Bounce (Bullish)',
   'trendlineBounceBearish': 'Trendline Bounce (Bearish)',
+  'htfTrendlineBreakoutUp': 'HTF Trendline Breakout (Up)',
+  'htfTrendlineBreakoutDown': 'HTF Trendline Breakdown (Down)',
+  'htfTrendlineBounceBullish': 'HTF Trendline Bounce (Bullish)',
+  'htfTrendlineBounceBearish': 'HTF Trendline Bounce (Bearish)',
   
   // Pattern Descriptions
   'bullishOutsideBarDesc': 'A volatility expansion where the current bar\'s range engulfs the prior bar.',
@@ -233,6 +244,10 @@ export const en = {
   'trendlineBreakoutDownDesc': 'Price has decisively closed below a significant ascending trendline, signaling a potential trend reversal or acceleration.',
   'trendlineBounceBullishDesc': 'Price tested an ascending trendline and bounced, confirming the trendline as support and a potential long entry.',
   'trendlineBounceBearishDesc': 'Price tested a descending trendline and was rejected, confirming the trendline as resistance and a potential short entry.',
+  'htfTrendlineBreakoutUpDesc': 'Price broke a significant trendline from a higher timeframe, signaling a major potential shift.',
+  'htfTrendlineBreakoutDownDesc': 'Price broke a significant trendline from a higher timeframe, signaling a major potential shift.',
+  'htfTrendlineBounceBullishDesc': 'Price bounced off a significant trendline from a higher timeframe, confirming a major support level.',
+  'htfTrendlineBounceBearishDesc': 'Price was rejected by a significant trendline from a higher timeframe, confirming a major resistance level.',
 
 
   // Calculation Details
@@ -363,4 +378,12 @@ export const en = {
   'recentSignals': 'Recent Signals',
   'noContextSignals': 'No recent signals on this timeframe.',
   'selectTimeframesPrompt': 'Select higher timeframes from the control panel to see broader market context.',
+  'trend': 'Trend',
+  'rsi': 'RSI',
+  'uptrend': 'Uptrend',
+  'downtrend': 'Downtrend',
+  'range': 'Range',
+  'overbought': 'Overbought',
+  'oversold': 'Oversold',
+  'neutral': 'Neutral',
 };

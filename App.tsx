@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PriceChart } from './components/PriceChart';
@@ -12,7 +10,8 @@ import { fetchKlines, fetchExchangeInfo, subscribeToKlineStream } from './servic
 import { analyzeCandles } from './services/patternRecognizer';
 import { getTradingStrategy } from './services/aiService';
 import { runBacktest, BacktestResult } from './services/backtestService';
-import type { Candle, DetectedPattern, BacktestStrategy, PriceAlert, MultiTimeframeAnalysis, TrendLine } from './types';
+import { calculateBollingerBands, calculateEMA, calculateRSI } from './services/indicatorService';
+import type { Candle, DetectedPattern, BacktestStrategy, PriceAlert, MultiTimeframeAnalysis, TrendLine, IndicatorData } from './types';
 import { FALLBACK_SYMBOLS, ALL_PATTERNS, BACKTEST_INITIAL_CAPITAL, BACKTEST_COMMISSION_RATE, TIMEFRAMES } from './constants';
 import { LogoIcon } from './components/icons/LogoIcon';
 import { useLanguage } from './contexts/LanguageContext';
@@ -82,15 +81,25 @@ const App: React.FC = () => {
     const [useAtrPositionSizing, setUseAtrPositionSizing] = useState<boolean>(false);
     const [riskPerTradePercent, setRiskPerTradePercent] = useState<number>(1);
 
-    // Price Alert State
+    // Price Alert & Drawing State
     const [alerts, setAlerts] = useState<Record<string, PriceAlert[]>>({});
+    const [drawingMode, setDrawingMode] = useState<'hline' | null>(null);
+    const [horizontalLines, setHorizontalLines] = useState<PriceAlert[]>([]);
 
     // Multi-Timeframe State
     const [secondaryTimeframes, setSecondaryTimeframes] = useState<Set<string>>(() => new Set(['1d']));
     const [multiTimeframeAnalysis, setMultiTimeframeAnalysis] = useState<MultiTimeframeAnalysis[]>([]);
+    const [multiTimeframeTrendlines, setMultiTimeframeTrendlines] = useState<TrendLine[]>([]);
     const [isMultiTimeframeLoading, setIsMultiTimeframeLoading] = useState<boolean>(false);
     const [hoveredMultiTimeframePattern, setHoveredMultiTimeframePattern] = useState<DetectedPattern | null>(null);
 
+    // Indicators State
+    const [indicators, setIndicators] = useState<Record<string, boolean>>({
+        'ema-20': true,
+        'bb-20-2': false,
+        'rsi-14': true,
+    });
+    
     // WebSocket and Data Caching Refs
     const wsCleanupRef = useRef<(() => void) | null>(null);
     const klineCacheRef = useRef<Map<string, Candle[]>>(new Map());
@@ -101,6 +110,22 @@ const App: React.FC = () => {
         const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
         return endDate.getTime() < fiveMinutesAgo;
     }, [endDate]);
+
+    const indicatorData = useMemo<IndicatorData>(() => {
+        if (candles.length < 20) return {};
+        const data: IndicatorData = {};
+        if (indicators['ema-20']) {
+            data.ema20 = calculateEMA(candles, 20);
+        }
+        if (indicators['bb-20-2']) {
+            data.bb20 = calculateBollingerBands(candles, 20, 2);
+        }
+        if (indicators['rsi-14']) {
+            data.rsi14 = calculateRSI(candles, 14);
+        }
+        return data;
+    }, [candles, indicators]);
+
 
     useEffect(() => {
         symbolRef.current = symbol;
@@ -182,38 +207,43 @@ const App: React.FC = () => {
         };
     }, [symbol, timeframe, startDate, endDate, refreshCount, isHistorical, addToast, t]);
 
-    // Effect for running analysis whenever candles change
+    // Effect for running analysis whenever candles or HTF trendlines change
     useEffect(() => {
         if (candles.length > 0) {
-            const { patterns: newPatterns, trendlines: newTrendlines } = analyzeCandles(candles);
+            const { patterns: newPatterns, trendlines: newTrendlines } = analyzeCandles(candles, multiTimeframeTrendlines);
+            const taggedTrendlines = newTrendlines.map(tl => ({ ...tl, timeframe: timeframe }));
             setPatterns(newPatterns);
-            setTrendlines(newTrendlines);
+            setTrendlines(taggedTrendlines);
         } else {
             setPatterns([]);
             setTrendlines([]);
         }
-    }, [candles]);
+    }, [candles, multiTimeframeTrendlines, timeframe]);
 
     // Effect for multi-timeframe analysis
     useEffect(() => {
         const analyzeSecondaryTimeframes = async () => {
             if (secondaryTimeframes.size === 0) {
                 setMultiTimeframeAnalysis([]);
+                setMultiTimeframeTrendlines([]);
                 return;
             }
             setIsMultiTimeframeLoading(true);
             const analysisPromises = Array.from(secondaryTimeframes).map(async (tf) => {
                 try {
                     const tfCandles = await fetchKlines(symbol, tf, 500, startDate.getTime(), endDate.getTime());
-                    const { patterns } = analyzeCandles(tfCandles);
-                    return { timeframe: tf, patterns };
+                    const { patterns, trendlines, trend, rsi } = analyzeCandles(tfCandles);
+                    const taggedTrendlines = trendlines.map(tl => ({ ...tl, timeframe: tf }));
+                    return { timeframe: tf, patterns, trendlines: taggedTrendlines, trend, rsi };
                 } catch (e) {
                     console.error(`Failed to analyze secondary timeframe ${tf}:`, e);
-                    return { timeframe: tf, patterns: [] };
+                    const fallbackRsi = { value: null, state: 'NEUTRAL' as const };
+                    return { timeframe: tf, patterns: [], trendlines: [], trend: 'RANGE' as const, rsi: fallbackRsi };
                 }
             });
             const results = await Promise.all(analysisPromises);
             setMultiTimeframeAnalysis(results);
+            setMultiTimeframeTrendlines(results.flatMap(r => r.trendlines));
             setIsMultiTimeframeLoading(false);
         };
         analyzeSecondaryTimeframes();
@@ -238,15 +268,18 @@ const App: React.FC = () => {
                 setStrategyCache(prev => new Map(prev).set(cacheKey, strategy));
             } catch (err) {
                 console.error("Error generating AI strategy:", err);
-                // FIX: Argument of type 'unknown' is not assignable to parameter of type 'string'.
-                // Convert the unknown error to a string before using it.
-                setAiStrategy(String(err));
+                setAiStrategy(err instanceof Error ? err.message : String(err));
             } finally {
                 setIsAiLoading(false);
             }
         };
         generateStrategy();
     }, [selectedSignalForAI, isModalOpen, candles, t, locale, strategyCache]);
+
+    // Effect to clear backtest results when filters or data context change, as the results are now stale.
+    useEffect(() => {
+        setBacktestResult(null);
+    }, [selectedPatterns, selectedPriorities, symbol, timeframe, startDate, endDate]);
 
     const handleAddAlert = useCallback((symbol: string, price: number) => {
         const newAlert = { id: Date.now().toString(), price };
@@ -256,6 +289,16 @@ const App: React.FC = () => {
 
     const handleRemoveAlert = useCallback((symbol: string, id: string) => {
         setAlerts(prev => ({ ...prev, [symbol]: (prev[symbol] || []).filter(a => a.id !== id) }));
+    }, []);
+
+    const handleAddHorizontalLine = useCallback((price: number) => {
+        const newLine = { id: `hline-${Date.now()}`, price };
+        setHorizontalLines(prev => [...prev, newLine]);
+        setDrawingMode(null); // Exit drawing mode after adding one line
+    }, []);
+
+    const handleRemoveHorizontalLine = useCallback((id: string) => {
+        setHorizontalLines(prev => prev.filter(l => l.id !== id));
     }, []);
 
     // Effect for checking price alerts
@@ -278,8 +321,6 @@ const App: React.FC = () => {
 
     const handleRunBacktest = useCallback(() => {
         if (candles.length < 2) {
-            // FIX: Expected 1 arguments, but got 2.
-            // The addToast function now expects a single object argument.
             addToast({ message: 'Not enough data to run backtest', type: 'error' });
             return;
         }
@@ -310,8 +351,6 @@ const App: React.FC = () => {
                 setIsBacktestModalOpen(true);
             } catch (error) {
                 console.error("Backtest failed:", error);
-                // FIX: Expected 1 arguments, but got 2.
-                // The addToast function now expects a single object argument.
                 addToast({ message: 'Backtest failed. See console for details.', type: 'error' });
             } finally {
                 setIsBacktestRunning(false);
@@ -329,6 +368,15 @@ const App: React.FC = () => {
         setSelectedSignalForAI(pattern);
         setIsModalOpen(true);
     };
+
+    const filteredMultiTimeframeAnalysis = useMemo(() => {
+        return multiTimeframeAnalysis.map(analysis => ({
+            ...analysis,
+            patterns: analysis.patterns.filter(p => 
+                selectedPatterns.has(p.name) && selectedPriorities.has(p.priority)
+            )
+        }));
+    }, [multiTimeframeAnalysis, selectedPatterns, selectedPriorities]);
 
     return (
         <div className="bg-gray-900 text-white min-h-screen font-sans flex flex-col">
@@ -353,6 +401,8 @@ const App: React.FC = () => {
                         onRunBacktest={handleRunBacktest}
                         onOpenDecisionMakerModal={() => setIsDecisionMakerModalOpen(true)}
                         alerts={alerts} addAlert={handleAddAlert} removeAlert={handleRemoveAlert}
+                        indicators={indicators} setIndicators={setIndicators}
+                        drawingMode={drawingMode} setDrawingMode={setDrawingMode}
                     />
                 </div>
             </header>
@@ -367,14 +417,21 @@ const App: React.FC = () => {
                     <PriceChart
                         data={candles}
                         patterns={patterns.filter(p => selectedPatterns.has(p.name) && selectedPriorities.has(p.priority))}
-                        trendlines={trendlines}
+                        trendlines={[...trendlines, ...multiTimeframeTrendlines]}
+                        timeframe={timeframe}
                         hoveredPatternIndex={hoveredPatternIndex}
-                        multiTimeframeAnalysis={multiTimeframeAnalysis}
+                        multiTimeframeAnalysis={filteredMultiTimeframeAnalysis}
                         hoveredMultiTimeframePattern={hoveredMultiTimeframePattern}
                         isHistorical={isHistorical}
+                        indicatorData={indicatorData}
+                        tradeLog={backtestResult?.tradeLog ?? []}
+                        horizontalLines={horizontalLines}
+                        onAddHorizontalLine={handleAddHorizontalLine}
+                        onRemoveHorizontalLine={handleRemoveHorizontalLine}
+                        drawingMode={drawingMode}
                     />
                      <MultiTimeframePanel
-                        analysis={multiTimeframeAnalysis}
+                        analysis={filteredMultiTimeframeAnalysis}
                         isLoading={isMultiTimeframeLoading}
                         setHoveredMultiTimeframePattern={setHoveredMultiTimeframePattern}
                     />

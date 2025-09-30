@@ -1,7 +1,8 @@
 
+
 import React, { useMemo, useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { MultiTimeframeAnalysis, SignalDirection, DetectedPattern } from '../types';
+import { MultiTimeframeAnalysis, SignalDirection, DetectedPattern, TrendDirection } from '../types';
 import { ArrowUpIcon } from './icons/ArrowUpIcon';
 import { ArrowDownIcon } from './icons/ArrowDownIcon';
 import { TIMEFRAMES } from '../constants';
@@ -25,48 +26,99 @@ const SkeletonLoader: React.FC = () => (
     </div>
 );
 
-
-const TimeframeSignalItem: React.FC<{
-    pattern: DetectedPattern;
-    onMouseEnter: () => void;
-    onMouseLeave: () => void;
-}> = ({ pattern, onMouseEnter, onMouseLeave }) => {
+const TimeframeContextCard: React.FC<{
+    item: MultiTimeframeAnalysis;
+    onPatternHover: (pattern: DetectedPattern | null) => void;
+}> = ({ item, onPatternHover }) => {
     const { t } = useLanguage();
-    const [isExpanded, setIsExpanded] = useState(false);
+    const timeframeLabels = useMemo(() => new Map(TIMEFRAMES.map(tf => [tf.value, tf.label])), []);
+    const recentPatterns = item.patterns.slice(-3).reverse();
 
-    const isBullish = pattern.direction === SignalDirection.Bullish;
-    const colorClass = isBullish ? 'text-green-400' : 'text-red-400';
+    const trendClasses: Record<TrendDirection, string> = {
+        UPTREND: 'bg-green-500/20 text-green-300',
+        DOWNTREND: 'bg-red-500/20 text-red-300',
+        RANGE: 'bg-yellow-500/20 text-yellow-300',
+    };
 
-    const handleInfoClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setIsExpanded(!isExpanded);
+    const rsiStateClasses: Record<MultiTimeframeAnalysis['rsi']['state'], string> = {
+        OVERBOUGHT: 'text-red-400',
+        OVERSOLD: 'text-green-400',
+        NEUTRAL: 'text-gray-300',
+    };
+    
+    const rsiBarColor = (value: number) => {
+        if (value > 70) return 'bg-red-500';
+        if (value < 30) return 'bg-green-500';
+        return 'bg-cyan-500';
     };
 
     return (
-        <li
-            className="p-1 rounded-md hover:bg-gray-700/50"
-            onMouseEnter={onMouseEnter}
-            onMouseLeave={onMouseLeave}
-        >
-            <div className="flex items-center gap-2 cursor-pointer">
-                {isBullish 
-                    ? <ArrowUpIcon className={`w-4 h-4 ${colorClass} flex-shrink-0`} /> 
-                    : <ArrowDownIcon className={`w-4 h-4 ${colorClass} flex-shrink-0`} />
-                }
-                <span className="flex-grow text-gray-300">{t(pattern.name)}</span>
-                <span className="text-xs text-gray-500 flex-shrink-0">{new Date(pattern.candle.time * 1000).toLocaleString()}</span>
-                 <button onClick={handleInfoClick} className="text-gray-400 hover:text-cyan-400 transition-colors flex-shrink-0" aria-label={t('showCalculationDetails')}>
-                    <InfoIcon className="w-4 h-4" />
-                </button>
+        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 flex flex-col gap-3">
+            <h4 className="font-bold text-gray-200">{timeframeLabels.get(item.timeframe) || item.timeframe}</h4>
+
+            <div className="space-y-3 text-sm">
+                <div className="flex justify-between items-center">
+                    <span className="text-gray-400">{t('trend')}</span>
+                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${trendClasses[item.trend]}`}>
+                        {t(item.trend.toLowerCase())}
+                    </span>
+                </div>
+                <div>
+                     <div className="flex justify-between items-center mb-1">
+                        <span className="text-gray-400">RSI (14)</span>
+                        <span className={`font-semibold ${rsiStateClasses[item.rsi.state]}`}>
+                             {item.rsi.value ? item.rsi.value.toFixed(1) : 'N/A'}
+                        </span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-1.5 relative">
+                         {item.rsi.value !== null && (
+                            <div className={`h-1.5 rounded-full ${rsiBarColor(item.rsi.value)}`} style={{ width: `${item.rsi.value}%` }} />
+                         )}
+                         <div className="absolute top-0 left-[30%] w-px h-1.5 bg-gray-600"></div>
+                         <div className="absolute top-0 left-[70%] w-px h-1.5 bg-gray-600"></div>
+                    </div>
+                </div>
             </div>
-            {isExpanded && <SignalDetail patternName={pattern.name} />}
-        </li>
+
+            <div className="pt-3 border-t border-gray-700">
+                <h5 className="text-xs text-gray-400 uppercase font-semibold mb-2">{t('recentSignals')}</h5>
+                 {recentPatterns.length > 0 ? (
+                    <ul className="space-y-1 text-sm">
+                        {recentPatterns.map((p, index) => (
+                            <li
+                                key={`${p.index}-${index}`}
+                                className="p-1 rounded-md hover:bg-gray-700/50 flex items-center gap-2 cursor-default"
+                                onMouseEnter={() => onPatternHover(p)}
+                                onMouseLeave={() => onPatternHover(null)}
+                            >
+                                {p.direction === SignalDirection.Bullish 
+                                    ? <ArrowUpIcon className="w-4 h-4 text-green-400 flex-shrink-0" /> 
+                                    : <ArrowDownIcon className="w-4 h-4 text-red-400 flex-shrink-0" />
+                                }
+                                <span className="flex-grow text-gray-300 truncate">{t(p.name)}</span>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <p className="text-sm text-gray-500 text-center py-2">{t('noContextSignals')}</p>
+                )}
+            </div>
+        </div>
     );
 };
 
+
 export const MultiTimeframePanel: React.FC<MultiTimeframePanelProps> = ({ analysis, isLoading, setHoveredMultiTimeframePattern }) => {
     const { t } = useLanguage();
-    const timeframeLabels = useMemo(() => new Map(TIMEFRAMES.map(tf => [tf.value, tf.label])), []);
+    
+    // Sort analysis from longer timeframe to shorter
+    const sortedAnalysis = useMemo(() => {
+        const timeframeOrder = TIMEFRAMES.map(tf => tf.value).reverse();
+        return [...analysis].sort((a, b) => {
+            return timeframeOrder.indexOf(a.timeframe) - timeframeOrder.indexOf(b.timeframe);
+        });
+    }, [analysis]);
+
 
     if (isLoading) {
         return (
@@ -96,30 +148,13 @@ export const MultiTimeframePanel: React.FC<MultiTimeframePanelProps> = ({ analys
         <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
             <h3 className="text-lg font-bold text-cyan-400 mb-4">{t('multiTimeframeContext')}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {analysis.map(({ timeframe, patterns }) => {
-                    const recentPatterns = patterns.slice(-5).reverse();
-                    return (
-                        <div key={timeframe} className="bg-gray-800 p-4 rounded-lg border border-gray-700">
-                            <h4 className="font-bold text-gray-200 border-b border-gray-600 pb-2 mb-3">
-                                {timeframeLabels.get(timeframe) || timeframe} - <span className="text-gray-400">{t('recentSignals')}</span>
-                            </h4>
-                            {recentPatterns.length > 0 ? (
-                                <ul className="space-y-1 text-sm">
-                                    {recentPatterns.map((p, index) => (
-                                         <TimeframeSignalItem 
-                                            key={`${p.index}-${index}`}
-                                            pattern={p}
-                                            onMouseEnter={() => setHoveredMultiTimeframePattern(p)}
-                                            onMouseLeave={() => setHoveredMultiTimeframePattern(null)}
-                                        />
-                                    ))}
-                                </ul>
-                            ) : (
-                                <p className="text-sm text-gray-500 text-center py-4">{t('noContextSignals')}</p>
-                            )}
-                        </div>
-                    )
-                })}
+                {sortedAnalysis.map((item) => (
+                    <TimeframeContextCard 
+                        key={item.timeframe}
+                        item={item}
+                        onPatternHover={setHoveredMultiTimeframePattern}
+                    />
+                ))}
             </div>
         </div>
     );

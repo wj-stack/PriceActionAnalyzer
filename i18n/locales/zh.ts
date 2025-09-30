@@ -44,6 +44,12 @@ export const zh = {
   'removeAlert': '移除提醒',
   'alertTriggeredMessage': '🔔 价格提醒: {{symbol}} 已达到 {{price}}！',
   'selectTimeframes': '选择分析周期',
+  'indicators': '技术指标',
+  'indicator-ema-20': 'EMA (20)',
+  'indicator-bb-20-2': '布林带 (20, 2)',
+  'indicator-rsi-14': 'RSI (14)',
+  'drawingTools': '绘图工具',
+  'drawHLine': '绘制水平线',
 
   // PriceChart.tsx
   'noData': '无可用数据。',
@@ -57,6 +63,7 @@ export const zh = {
   'tooltipLow': '低',
   'tooltipClose': '收',
   'tooltipVolume': '量',
+  'rsiIndicator': 'RSI (14)',
 
   // SignalList.tsx
   'detectedSignals': '侦测到的信号',
@@ -195,7 +202,6 @@ export const zh = {
   'towerTop': '塔形顶',
   'threeSoldiers': '白三兵',
   'threeCrows': '三只乌鸦',
-
   'bullishBreakout': '看涨突破',
   'bearishBreakout': '看跌突破',
   'emaPullbackBull': '看涨 EMA 回调',
@@ -206,6 +212,10 @@ export const zh = {
   'trendlineBreakoutDown': '趋势线向下跌破',
   'trendlineBounceBullish': '趋势线看涨反弹',
   'trendlineBounceBearish': '趋势线看跌反弹',
+  'htfTrendlineBreakoutUp': '高周期趋势线突破(上)',
+  'htfTrendlineBreakoutDown': '高周期趋势线突破(下)',
+  'htfTrendlineBounceBullish': '高周期趋势线反弹(多)',
+  'htfTrendlineBounceBearish': '高周期趋势线反弹(空)',
   
   // Pattern Descriptions
   'bullishOutsideBarDesc': '当前K线范围吞没前一根K线，表示波动性扩张。',
@@ -233,6 +243,10 @@ export const zh = {
   'trendlineBreakoutDownDesc': '价格决定性地收盘于重要的上升趋势线下方，预示着潜在的趋势反转或加速。',
   'trendlineBounceBullishDesc': '价格测试上升趋势线后反弹，确认了趋势线的支撑作用，是潜在的做多入场点。',
   'trendlineBounceBearishDesc': '价格测试下降趋势线后被拒绝，确认了趋势线的阻力作用，是潜在的做空入场点。',
+  'htfTrendlineBreakoutUpDesc': '价格突破了来自更高时间周期的重要趋势线，预示着重大的潜在转变。',
+  'htfTrendlineBreakoutDownDesc': '价格突破了来自更高时间周期的重要趋势线，预示着重大的潜在转变。',
+  'htfTrendlineBounceBullishDesc': '价格在来自更高时间周期的重要趋势线处反弹，确认了一个主要支撑位。',
+  'htfTrendlineBounceBearishDesc': '价格在来自更高时间周期的重要趋势线处受阻，确认了一个主要阻力位。',
   
   // Calculation Details
   'strengthScoreCalculationTitle': '强度分数计算',
@@ -362,4 +376,12 @@ export const zh = {
   'recentSignals': '近期信号',
   'noContextSignals': '此时间周期内无近期信号。',
   'selectTimeframesPrompt': '请在控制面板中选择更高的时间周期以查看市场宏观背景。',
+  'trend': '趋势',
+  'rsi': 'RSI',
+  'uptrend': '上升趋势',
+  'downtrend': '下降趋势',
+  'range': '盘整',
+  'overbought': '超买',
+  'oversold': '超卖',
+  'neutral': '中性',
 };

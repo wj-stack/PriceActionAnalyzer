@@ -1,3 +1,4 @@
+
 import type { BinanceKline, Candle } from '../types';
 
 const API_BASE_URL = 'https://api.binance.com/api/v3/klines';
@@ -141,73 +142,138 @@ const mapBinanceWsKlineToCandle = (kline: BinanceWsKline): Candle => {
 };
 
 /**
- * Fetches historical k-line data within a specified date range, paginating backwards from the end time.
+ * Fetches historical k-line data from Binance.
+ * This function is optimized to fetch data in multiple batches if the requested range or limit is large.
+ * It operates in two modes:
+ * 
+ * 1. Date Range Mode: Triggered when `startTime` is provided. It fetches all available k-lines between 
+ *    `startTime` and `endTime`. The `limit` parameter is ignored. This is ideal for historical analysis
+ *    and backtesting over a specific period. It fetches data chronologically (forward in time).
+ * 
+ * 2. Limit Mode: Triggered when `startTime` is NOT provided. It fetches the most recent `limit` k-lines.
+ *    This is useful for getting the latest market context for real-time analysis. It fetches data
+ *    backwards in time for efficiency.
  */
 export const fetchKlines = async (symbol: string, interval: string, limit: number = 1000, startTime?: number, endTime?: number): Promise<Candle[]> => {
     let allKlines: BinanceKline[] = [];
-    let currentEndTime = endTime || Date.now();
-    const limitPerRequest = 1000;
+    const limitPerRequest = 1000; // Max items per request for Binance API
 
-    // Fetch data in chunks backwards from the end time until we hit the start time or the specified limit.
-    while (true) {
-        const url = new URL(API_BASE_URL);
-        url.searchParams.append('symbol', symbol);
-        url.searchParams.append('interval', interval);
-        url.searchParams.append('limit', String(limitPerRequest));
-        url.searchParams.append('endTime', String(currentEndTime));
-        
-        if (startTime) {
-            url.searchParams.append('startTime', String(startTime));
-        }
+    // --- Date Range Mode ---
+    if (startTime) {
+        let currentStartTime = startTime;
+        const finalEndTime = endTime || Date.now();
 
-        try {
-            const response = await fetch(url.toString());
-            if (!response.ok) {
+        while (currentStartTime < finalEndTime) {
+            const url = new URL(API_BASE_URL);
+            url.searchParams.append('symbol', symbol);
+            url.searchParams.append('interval', interval);
+            url.searchParams.append('limit', String(limitPerRequest));
+            url.searchParams.append('startTime', String(currentStartTime));
+            
+            try {
+                const response = await fetch(url.toString());
+                if (!response.ok) {
+                    const curlCommand = `curl "${url.toString()}"`;
+                    console.error("Public API request failed (klines). Debug with curl:");
+                    console.error(curlCommand);
+                    throw new Error(`Binance API Error: ${response.status} ${response.statusText}`);
+                }
+
+                const klineData: BinanceKline[] = await response.json();
+                if (!Array.isArray(klineData)) {
+                    throw new Error(`Invalid data structure received from Klines API.`);
+                }
+                
+                // Break condition: API has no more data for this period.
+                if (klineData.length === 0) {
+                    break;
+                }
+
+                allKlines = allKlines.concat(klineData);
+                
+                // Set up the next request to fetch data from after the current chunk.
+                // The API returns klines with open time [t, t+interval). So the next start time is the last candle's close time + 1ms.
+                const lastCandleCloseTime = klineData[klineData.length - 1][6];
+                currentStartTime = lastCandleCloseTime + 1;
+
+                // Break condition: The last batch was not full, so we're at the end of the data.
+                if (klineData.length < limitPerRequest) {
+                    break;
+                }
+
+            } catch (error) {
                 const curlCommand = `curl "${url.toString()}"`;
-                console.error("Public API request failed (klines). Debug with curl:");
+                console.error("Public API request failed at network level (klines). Debug with curl:");
                 console.error(curlCommand);
-                throw new Error(`Binance API Error: ${response.status} ${response.statusText}`);
+                console.error(`Failed to fetch k-line data:`, error, "url", url.toString());
+                throw error;
             }
-
-            const klineData: BinanceKline[] = await response.json();
-            if (!Array.isArray(klineData)) {
-                throw new Error(`Invalid data structure received from Klines API.`);
-            }
-
-            if (klineData.length === 0) {
-                break; // No more data in this range.
-            }
+        }
+    } 
+    // --- Limit Mode ---
+    else {
+        let currentEndTime = endTime || Date.now();
+        
+        while (allKlines.length < limit) {
+            const url = new URL(API_BASE_URL);
+            url.searchParams.append('symbol', symbol);
+            url.searchParams.append('interval', interval);
             
-            allKlines = [...klineData, ...allKlines];
-            
-            const firstCandleTime = klineData[0][0];
+            const remaining = limit - allKlines.length;
+            const currentRequestLimit = Math.min(remaining, limitPerRequest);
+            url.searchParams.append('limit', String(currentRequestLimit));
+            url.searchParams.append('endTime', String(currentEndTime));
 
-            // Stop if we've fetched data from before our desired start time.
-            if (startTime && firstCandleTime <= startTime) {
-                break;
+            try {
+                const response = await fetch(url.toString());
+                if (!response.ok) {
+                    const curlCommand = `curl "${url.toString()}"`;
+                    console.error("Public API request failed (klines). Debug with curl:");
+                    console.error(curlCommand);
+                    throw new Error(`Binance API Error: ${response.status} ${response.statusText}`);
+                }
+    
+                const klineData: BinanceKline[] = await response.json();
+                if (!Array.isArray(klineData)) {
+                    throw new Error(`Invalid data structure received from Klines API.`);
+                }
+                
+                // Break condition: API has no more historical data.
+                if (klineData.length === 0) {
+                    break;
+                }
+
+                allKlines = [...klineData, ...allKlines]; // Prepend the older data chunk.
+
+                // Set up the next request to fetch data from before the current chunk.
+                const firstCandleTimeInChunk = klineData[0][0];
+                currentEndTime = firstCandleTimeInChunk - 1;
+
+            } catch (error) {
+                 const curlCommand = `curl "${url.toString()}"`;
+                 console.error("Public API request failed at network level (klines). Debug with curl:");
+                 console.error(curlCommand);
+                 console.error(`Failed to fetch k-line data:`, error, "url", url.toString());
+                 throw error;
             }
-            
-            // Set the end time for the next older chunk.
-            currentEndTime = firstCandleTime - 1;
-
-        } catch (error) {
-            const curlCommand = `curl "${url.toString()}"`;
-            console.error("Public API request failed at network level (klines). Debug with curl:");
-            console.error(curlCommand);
-            console.error(`Failed to fetch k-line data:`, error, "url", url.toString());
-            throw error;
         }
     }
-    
-    // De-duplicate candles and filter again to ensure we are strictly within bounds.
+
+    // De-duplicate any potential overlapping candles and ensure sorting.
     const uniqueKlinesMap = new Map<number, BinanceKline>();
     for (const kline of allKlines) {
+        // In Date Range mode, strictly enforce the time bounds, just in case API returned something outside.
         if (startTime && kline[0] < startTime) continue;
         if (endTime && kline[0] > endTime) continue;
         uniqueKlinesMap.set(kline[0], kline);
     }
     
-    const sortedKlines = Array.from(uniqueKlinesMap.values()).sort((a, b) => a[0] - b[0]);
+    let sortedKlines = Array.from(uniqueKlinesMap.values()).sort((a, b) => a[0] - b[0]);
+
+    // In Limit mode, ensure we don't return more than requested, taking the most recent ones.
+    if (!startTime && sortedKlines.length > limit) {
+        sortedKlines = sortedKlines.slice(-limit);
+    }
 
     return sortedKlines.map(mapBinanceRestKlineToCandle);
 };

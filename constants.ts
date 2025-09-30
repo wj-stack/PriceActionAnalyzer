@@ -99,6 +99,10 @@ export const ALL_PATTERNS = [
     { name: 'trendlineBreakoutDown', type: PatternType.Trend, labelKey: 'trendlineBreakoutDown' },
     { name: 'trendlineBounceBullish', type: PatternType.Trend, labelKey: 'trendlineBounceBullish' },
     { name: 'trendlineBounceBearish', type: PatternType.Trend, labelKey: 'trendlineBounceBearish' },
+    { name: 'htfTrendlineBreakoutUp', type: PatternType.Trend, labelKey: 'htfTrendlineBreakoutUp' },
+    { name: 'htfTrendlineBreakoutDown', type: PatternType.Trend, labelKey: 'htfTrendlineBreakoutDown' },
+    { name: 'htfTrendlineBounceBullish', type: PatternType.Trend, labelKey: 'htfTrendlineBounceBullish' },
+    { name: 'htfTrendlineBounceBearish', type: PatternType.Trend, labelKey: 'htfTrendlineBounceBearish' },
 
     // Range Patterns
     { name: 'failedBullishBreakout', type: PatternType.Range, labelKey: 'failedBullishBreakout' },

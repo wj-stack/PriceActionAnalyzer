@@ -174,7 +174,14 @@ export type TradeCloseReason = 'STOP_LOSS' | 'TAKE_PROFIT' | 'END_OF_DATA' | 'RE
 export interface MultiTimeframeAnalysis {
   timeframe: string;
   patterns: DetectedPattern[];
+  trendlines: TrendLine[];
+  trend: TrendDirection;
+  rsi: {
+    value: number | null;
+    state: 'OVERBOUGHT' | 'OVERSOLD' | 'NEUTRAL';
+  };
 }
+
 
 export interface TrendPoint {
   index: number;
@@ -190,9 +197,23 @@ export interface TrendLine {
   strength: number; // 1 to 5 scale based on touches and length
   slope: number;
   intercept: number;
+  timeframe?: string;
   channelLine?: {
       intercept: number;
   };
 }
 
 export type TrendDirection = 'UPTREND' | 'DOWNTREND' | 'RANGE';
+
+// Indicator types
+export interface BBands {
+    middle: number | null;
+    upper: number | null;
+    lower: number | null;
+}
+
+export interface IndicatorData {
+    ema20?: (number | null)[];
+    bb20?: (BBands | null)[];
+    rsi14?: (number | null)[];
+}
