@@ -1,4 +1,4 @@
-import type { Candle } from '../types';
+import type { Candle, MACDValue } from '../types';
 
 export interface BBands {
     middle: number | null;
@@ -205,4 +205,56 @@ export const calculateADX = (candles: Candle[], period: number): (number | null)
     }
     
     return adxValues;
+};
+
+const emaOnValues = (values: (number | null)[], period: number): (number | null)[] => {
+    const results: (number | null)[] = new Array(values.length).fill(null);
+    const firstValidIndex = values.findIndex(v => v !== null);
+
+    if (firstValidIndex === -1 || values.length - firstValidIndex < period) {
+        return results;
+    }
+
+    let sum = 0;
+    for (let i = 0; i < period; i++) {
+        sum += values[firstValidIndex + i]!;
+    }
+    let ema = sum / period;
+    results[firstValidIndex + period - 1] = ema;
+
+    const multiplier = 2 / (period + 1);
+    for (let i = firstValidIndex + period; i < values.length; i++) {
+        if (values[i] !== null) {
+            ema = (values[i]! - ema) * multiplier + ema;
+            results[i] = ema;
+        }
+    }
+    return results;
+};
+
+export const calculateMACD = (candles: Candle[], fastPeriod: number = 12, slowPeriod: number = 26, signalPeriod: number = 9): (MACDValue | null)[] => {
+    const macdValues: (MACDValue | null)[] = new Array(candles.length).fill(null);
+    if (candles.length < slowPeriod) return macdValues;
+
+    const fastEMA = calculateEMA(candles, fastPeriod);
+    const slowEMA = calculateEMA(candles, slowPeriod);
+
+    const macdLine: (number | null)[] = new Array(candles.length).fill(null);
+    for (let i = slowPeriod - 1; i < candles.length; i++) {
+        if (fastEMA[i] !== null && slowEMA[i] !== null) {
+            macdLine[i] = fastEMA[i]! - slowEMA[i]!;
+        }
+    }
+
+    const signalLine = emaOnValues(macdLine, signalPeriod);
+
+    for (let i = 0; i < candles.length; i++) {
+        if (macdLine[i] !== null && signalLine[i] !== null) {
+            const macd = macdLine[i]!;
+            const signal = signalLine[i]!;
+            const histogram = macd - signal;
+            macdValues[i] = { macd, signal, histogram };
+        }
+    }
+    return macdValues;
 };

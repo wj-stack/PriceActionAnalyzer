@@ -3,7 +3,7 @@ import type { BinanceKline, Candle } from '../types';
 
 const API_BASE_URL = 'https://api1.binance.com/api/v3/klines';
 const EXCHANGE_INFO_URL = 'https://api.binance.com/api/v3/exchangeInfo';
-const WEBSOCKET_BASE_URL = 'wss://stream.binance.com:9443/ws';
+const WEBSOCKET_BASE_URL = 'wss://stream.binance.com:443/ws';
 
 // --- Type definitions for Exchange Info ---
 interface BinanceSymbol {

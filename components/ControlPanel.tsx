@@ -1,20 +1,13 @@
 
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { TIMEFRAMES, ALL_PATTERNS } from '../constants';
+import { TIMEFRAMES } from '../constants';
 import { RefreshIcon } from './icons/RefreshIcon';
 import { useLanguage } from '../contexts/LanguageContext';
-import { FilterIcon } from './icons/FilterIcon';
-import { CalculatorIcon } from './icons/CalculatorIcon';
-import { PriorityFilterIcon } from './icons/PriorityFilterIcon';
-import { PatternType, PriceAlert } from '../types';
-import { BrainIcon } from './icons/BrainIcon';
+import { PriceAlert } from '../types';
 import { AlertIcon } from './icons/AlertIcon';
 import { CloseIcon } from './icons/CloseIcon';
-import { LayersIcon } from './icons/LayersIcon';
 import { IndicatorIcon } from './icons/IndicatorIcon';
-import { PencilIcon } from './icons/PencilIcon';
-import { SettingsIcon } from './icons/SettingsIcon';
-import { SparklesIcon } from './icons/SparklesIcon';
 
 interface ControlPanelProps {
     symbols: { value: string; label: string; baseAssetLogoUrl?: string; quoteAssetLogoUrl?: string; isAlpha?: boolean; }[];
@@ -29,28 +22,11 @@ interface ControlPanelProps {
     setStartDate: (date: Date) => void;
     endDate: Date;
     setEndDate: (date: Date) => void;
-    selectedPatterns: Set<string>;
-    setSelectedPatterns: (patterns: Set<string>) => void;
-    selectedPriorities: Set<number>;
-    setSelectedPriorities: (priorities: Set<number>) => void;
-    secondaryTimeframes: Set<string>;
-    setSecondaryTimeframes: (timeframes: Set<string>) => void;
-    onRunBacktest: () => void;
-    onOpenDecisionMakerModal: () => void;
-    onPredictSignal: () => void;
     alerts: Record<string, PriceAlert[]>;
     addAlert: (symbol: string, price: number) => void;
     removeAlert: (symbol: string, id: string) => void;
     indicators: Record<string, boolean>;
     setIndicators: (indicators: Record<string, boolean>) => void;
-    drawingMode: 'hline' | null;
-    setDrawingMode: (mode: 'hline' | null) => void;
-    showSwingLines: boolean;
-    setShowSwingLines: (show: boolean) => void;
-    showTrendlines: boolean;
-    setShowTrendlines: (show: boolean) => void;
-    maxTrendlineLength: number;
-    setMaxTrendlineLength: (length: number) => void;
 }
 
 const formatDateForInput = (date: Date): string => {
@@ -87,18 +63,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     isLoading, onRefresh,
     startDate, setStartDate,
     endDate, setEndDate,
-    selectedPatterns, setSelectedPatterns,
-    selectedPriorities, setSelectedPriorities,
-    secondaryTimeframes, setSecondaryTimeframes,
-    onRunBacktest,
-    onOpenDecisionMakerModal,
-    onPredictSignal,
     alerts, addAlert, removeAlert,
     indicators, setIndicators,
-    drawingMode, setDrawingMode,
-    showSwingLines, setShowSwingLines,
-    showTrendlines, setShowTrendlines,
-    maxTrendlineLength, setMaxTrendlineLength
 }) => {
     const { locale, setLocale, t } = useLanguage();
     const [openPopover, setOpenPopover] = useState<string | null>(null);
@@ -109,12 +75,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const [visibleSymbolCount, setVisibleSymbolCount] = useState(50);
 
     const popoverRefs = {
-        filter: useRef<HTMLDivElement>(null),
-        priority: useRef<HTMLDivElement>(null),
-        multiTimeframe: useRef<HTMLDivElement>(null),
         indicator: useRef<HTMLDivElement>(null),
         alert: useRef<HTMLDivElement>(null),
-        chartSettings: useRef<HTMLDivElement>(null),
     };
     const symbolDropdownRef = useRef<HTMLDivElement>(null);
     const symbolListRef = useRef<HTMLUListElement>(null);
@@ -148,63 +110,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const togglePopover = (name: string) => {
         setOpenPopover(prev => (prev === name ? null : name));
     };
-    
-    const handleFilterChange = (patternName: string, checked: boolean) => {
-        const newSet = new Set(selectedPatterns);
-        if (checked) newSet.add(patternName); else newSet.delete(patternName);
-        setSelectedPatterns(newSet);
-    };
-
-    const handleSelectAll = () => setSelectedPatterns(new Set(ALL_PATTERNS.map(p => p.name)));
-    // FIX: Explicitly type `new Set()` to `new Set<string>()` to avoid type inference issues.
-    const handleDeselectAll = () => setSelectedPatterns(new Set<string>());
-
-    const handleToggleType = (type: PatternType) => {
-        const typePatterns = ALL_PATTERNS.filter(p => p.type === type).map(p => p.name);
-        const allSelectedForType = typePatterns.every(name => selectedPatterns.has(name));
-        const newSet = new Set(selectedPatterns);
-        if (allSelectedForType) typePatterns.forEach(name => newSet.delete(name));
-        else typePatterns.forEach(name => newSet.add(name));
-        setSelectedPatterns(newSet);
-    }
-    
-    const priorityLevels = useMemo(() => [
-        { level: 4, labelKey: 'priorityVeryHigh' }, { level: 3, labelKey: 'priorityHigh' },
-        { level: 2, labelKey: 'priorityMedium' }, { level: 1, labelKey: 'priorityLow' },
-    ], []);
-
-    const handlePriorityFilterChange = (level: number, checked: boolean) => {
-        const newSet = new Set(selectedPriorities);
-        if (checked) newSet.add(level); else newSet.delete(level);
-        setSelectedPriorities(newSet);
-    };
-
-    const handleSelectAllPriorities = () => setSelectedPriorities(new Set([1, 2, 3, 4]));
-    // FIX: Explicitly type `new Set()` to `new Set<number>()` to fix the TypeScript error.
-    const handleDeselectAllPriorities = () => setSelectedPriorities(new Set<number>());
-
-    const handleSecondaryTimeframeChange = (tf: string, checked: boolean) => {
-        const newSet = new Set(secondaryTimeframes);
-        if (checked) newSet.add(tf); else newSet.delete(tf);
-        setSecondaryTimeframes(newSet);
-    };
-
-    const CONTEXT_TIMEFRAMES = useMemo(() => TIMEFRAMES.filter(tf => ['4h', '6h', '8h', '12h', '1d', '3d', '1w', '1mo'].includes(tf.value)), []);
-
-    // FIX: Replaced a potentially unsafe .reduce() with a type-safe for...of loop to group patterns by type.
-    // This ensures `patternsByType` is correctly typed as Record<PatternType, Pattern[]>, resolving
-    // the downstream error where `.map` could not be found on a variable of type 'unknown'.
-    const patternsByType = useMemo(() => {
-        const result: Record<PatternType, typeof ALL_PATTERNS> = {
-            [PatternType.Reversal]: [],
-            [PatternType.Trend]: [],
-            [PatternType.Range]: [],
-        };
-        for (const pattern of ALL_PATTERNS) {
-            result[pattern.type].push(pattern);
-        }
-        return result;
-    }, []);
 
     const filteredSymbols = useMemo(() => {
         if (!symbolSearch) return symbols;
@@ -258,43 +163,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
             {/* Group 2: Tools */}
             <div className="flex items-center gap-1">
-                 <div className="relative"><button title={t('filterPatterns')} data-popover-toggle onClick={() => togglePopover('filter')} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><FilterIcon className="w-5 h-5" /></button><Popover isOpen={openPopover === 'filter'} targetRef={popoverRefs.filter}><div className="p-3 space-y-3 max-h-80 overflow-y-auto"><div className="flex justify-between items-center text-xs"><button onClick={handleSelectAll} className="text-cyan-400 hover:underline">{t('selectAll')}</button><button onClick={handleDeselectAll} className="text-cyan-400 hover:underline">{t('deselectAll')}</button></div>{Object.entries(patternsByType).map(([type, patterns]) => (<div key={type}><h4 onClick={() => handleToggleType(type as PatternType)} className="font-semibold text-gray-300 text-sm mb-2 cursor-pointer">{t(`patternType${type}`)}</h4><div className="space-y-1 text-sm">{patterns.map(p => (<label key={p.name} className="flex items-center gap-2 text-gray-400 cursor-pointer"><input type="checkbox" checked={selectedPatterns.has(p.name)} onChange={(e) => handleFilterChange(p.name, e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" />{t(p.labelKey)}</label>))}</div></div>))}</div></Popover></div>
-                <div className="relative"><button title={t('filterByPriority')} data-popover-toggle onClick={() => togglePopover('priority')} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><PriorityFilterIcon className="w-5 h-5" /></button><Popover isOpen={openPopover === 'priority'} targetRef={popoverRefs.priority}><div className="p-3 space-y-2"><div className="flex justify-between items-center text-xs"><button onClick={handleSelectAllPriorities} className="text-cyan-400 hover:underline">{t('selectAll')}</button><button onClick={handleDeselectAllPriorities} className="text-cyan-400 hover:underline">{t('deselectAll')}</button></div>{priorityLevels.map(p => (<label key={p.level} className="flex items-center gap-2 text-gray-400 cursor-pointer text-sm"><input type="checkbox" checked={selectedPriorities.has(p.level)} onChange={(e) => handlePriorityFilterChange(p.level, e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" />{t(p.labelKey)}</label>))}</div></Popover></div>
-                <div className="relative"><button title={t('selectTimeframes')} data-popover-toggle onClick={() => togglePopover('multiTimeframe')} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><LayersIcon className="w-5 h-5" /></button><Popover isOpen={openPopover === 'multiTimeframe'} targetRef={popoverRefs.multiTimeframe}><div className="p-3 space-y-2"><h4 className="font-semibold text-gray-300 text-sm">{t('selectTimeframes')}</h4>{CONTEXT_TIMEFRAMES.map(tf => (<label key={tf.value} className="flex items-center gap-2 text-gray-400 cursor-pointer text-sm"><input type="checkbox" checked={secondaryTimeframes.has(tf.value)} onChange={e => handleSecondaryTimeframeChange(tf.value, e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" />{tf.label}</label>))}</div></Popover></div>
                 <div className="relative"><button title={t('indicators')} data-popover-toggle onClick={() => togglePopover('indicator')} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><IndicatorIcon className="w-5 h-5" /></button><Popover isOpen={openPopover === 'indicator'} targetRef={popoverRefs.indicator}><div className="p-3 space-y-2"><h4 className="font-semibold text-gray-300 text-sm">{t('indicators')}</h4>{Object.entries(indicators).map(([key, value]) => (<label key={key} className="flex items-center gap-2 text-gray-400 cursor-pointer text-sm"><input type="checkbox" checked={value} onChange={e => handleIndicatorChange(key, e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" />{t(`indicator-${key}`)}</label>))}</div></Popover></div>
                 <div className="relative"><button title={t('setPriceAlert')} data-popover-toggle onClick={() => togglePopover('alert')} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><AlertIcon className="w-5 h-5" /></button><Popover isOpen={openPopover === 'alert'} targetRef={popoverRefs.alert}><div className="p-3 space-y-3"><h4 className="font-semibold text-gray-300 text-sm">{t('setPriceAlertFor', { symbol })}</h4><div className="flex gap-2"><input type="number" placeholder={t('targetPrice')} value={newAlertPrice} onChange={e => setNewAlertPrice(e.target.value)} className="flex-grow bg-gray-900 border border-gray-600 rounded-md px-2 py-1 text-sm" /><button onClick={handleAddAlert} className="px-3 py-1 text-sm font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-md">{t('add')}</button></div>{currentAlerts.length > 0 && (<div className="space-y-1"><h5 className="text-xs text-gray-400">{t('activeAlerts')}</h5><ul className="text-sm text-gray-300">{currentAlerts.map(a => (<li key={a.id} className="flex justify-between items-center"><span className="font-mono">{a.price}</span><button onClick={() => removeAlert(symbol, a.id)}><CloseIcon className="w-4 h-4 text-gray-500 hover:text-red-400" /></button></li>))}</ul></div>)}</div></Popover></div>
-                <button title={t('drawingTools')} onClick={() => setDrawingMode(drawingMode === 'hline' ? null : 'hline')} className={`${baseSelectorClasses} ${disabledClasses} p-2 ${drawingMode === 'hline' ? 'bg-cyan-600 text-white' : ''}`}><PencilIcon className="w-5 h-5" /></button>
-                <div className="relative"><button title={t('chartDisplaySettings')} data-popover-toggle onClick={() => togglePopover('chartSettings')} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><SettingsIcon className="w-5 h-5" /></button>
-                    <Popover isOpen={openPopover === 'chartSettings'} targetRef={popoverRefs.chartSettings}>
-                        <div className="p-3 space-y-3">
-                            <h4 className="font-semibold text-gray-300 text-sm">{t('chartDisplaySettings')}</h4>
-                            <label className="flex items-center gap-2 text-gray-400 cursor-pointer text-sm">
-                                <input type="checkbox" checked={showSwingLines} onChange={e => setShowSwingLines(e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" />
-                                {t('showSwingPoints')}
-                            </label>
-                            <label className="flex items-center gap-2 text-gray-400 cursor-pointer text-sm">
-                                <input type="checkbox" checked={showTrendlines} onChange={e => setShowTrendlines(e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" />
-                                {t('showTrendlines')}
-                            </label>
-                            <div className="space-y-1 pt-2 border-t border-gray-700/50">
-                                <label htmlFor="max-trendline-length" className="text-gray-400 text-sm flex justify-between">
-                                  <span>{t('maxTrendlineLength')}</span>
-                                  <span className="font-mono text-gray-200">{maxTrendlineLength}</span>
-                                </label>
-                                <input
-                                    type="range"
-                                    id="max-trendline-length"
-                                    min="10"
-                                    max="500"
-                                    step="10"
-                                    value={maxTrendlineLength}
-                                    onChange={(e) => setMaxTrendlineLength(parseInt(e.target.value, 10))}
-                                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                                />
-                            </div>
-                        </div>
-                    </Popover>
-                </div>
             </div>
 
             <div className="flex-grow"></div>
@@ -304,9 +174,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 <input type="datetime-local" id="start-date" value={formatDateForInput(startDate)} onChange={(e) => setStartDate(new Date(e.target.value))} disabled={isLoading} className={`${baseSelectorClasses} ${disabledClasses} w-44`} />
                 <input type="datetime-local" id="end-date" value={formatDateForInput(endDate)} onChange={(e) => setEndDate(new Date(e.target.value))} disabled={isLoading} className={`${baseSelectorClasses} ${disabledClasses} w-44`} />
                 <button onClick={onRefresh} disabled={isLoading} aria-label={t('refreshAriaLabel')} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><RefreshIcon className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} /></button>
-                <button title={t('predictSignalTooltip')} onClick={onPredictSignal} className="bg-purple-600 text-white px-3 py-2 rounded-md font-semibold text-sm hover:bg-purple-500 transition-colors flex items-center gap-2"><SparklesIcon className="w-5 h-5" /><span>{t('predictSignal')}</span></button>
-                <button onClick={onRunBacktest} className="bg-yellow-500 text-gray-900 px-3 py-2 rounded-md font-semibold text-sm hover:bg-yellow-400 transition-colors flex items-center gap-2"><CalculatorIcon className="w-5 h-5" /><span>{t('runBacktest')}</span></button>
-                <button onClick={onOpenDecisionMakerModal} className="bg-cyan-600 text-white px-3 py-2 rounded-md font-semibold text-sm hover:bg-cyan-500 transition-colors flex items-center gap-2"><BrainIcon className="w-5 h-5" /><span>{t('openAiAdvisor')}</span></button>
                 <select id="language-select" value={locale} onChange={(e) => setLocale(e.target.value as 'en' | 'zh')} disabled={isLoading} className={`${baseSelectorClasses} ${disabledClasses}`}><option value="en">English</option><option value="zh">中文</option></select>
             </div>
         </div>

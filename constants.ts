@@ -1,4 +1,4 @@
-import { PatternType } from './types';
+
 
 export const FALLBACK_SYMBOLS = [
     // Pinned Majors
@@ -72,43 +72,24 @@ export const TIMEFRAMES = [
     { value: '1mo', label: '1 Month' },
 ];
 
+// FIX: Add missing constant for pattern details.
 export const ALL_PATTERNS = [
-    // Reversal Patterns
-    { name: 'hammer', type: PatternType.Reversal, labelKey: 'hammer' },
-    { name: 'shootingStar', type: PatternType.Reversal, labelKey: 'shootingStar' },
-    { name: 'bullishEngulfing', type: PatternType.Reversal, labelKey: 'bullishEngulfing' },
-    { name: 'bearishEngulfing', type: PatternType.Reversal, labelKey: 'bearishEngulfing' },
-    { name: 'doji', type: PatternType.Reversal, labelKey: 'doji' },
-    { name: 'bullishHarami', type: PatternType.Reversal, labelKey: 'bullishHarami' },
-    { name: 'bearishHarami', type: PatternType.Reversal, labelKey: 'bearishHarami' },
-    { name: 'bullishOutsideBar', type: PatternType.Reversal, labelKey: 'bullishOutsideBar' },
-    { name: 'bearishOutsideBar', type: PatternType.Reversal, labelKey: 'bearishOutsideBar' },
-    { name: 'morningStar', type: PatternType.Reversal, labelKey: 'morningStar' },
-    { name: 'eveningStar', type: PatternType.Reversal, labelKey: 'eveningStar' },
-    { name: 'towerBottom', type: PatternType.Reversal, labelKey: 'towerBottom' },
-    { name: 'towerTop', type: PatternType.Reversal, labelKey: 'towerTop' },
-    
-    // Trend Patterns
-    { name: 'bullishBreakout', type: PatternType.Trend, labelKey: 'bullishBreakout' },
-    { name: 'bearishBreakout', type: PatternType.Trend, labelKey: 'bearishBreakout' },
-    { name: 'emaPullbackBull', type: PatternType.Trend, labelKey: 'emaPullbackBull' },
-    { name: 'emaPullbackBear', type: PatternType.Trend, labelKey: 'emaPullbackBear' },
-    { name: 'threeSoldiers', type: PatternType.Trend, labelKey: 'threeSoldiers' },
-    { name: 'threeCrows', type: PatternType.Trend, labelKey: 'threeCrows' },
-    { name: 'trendlineBreakoutUp', type: PatternType.Trend, labelKey: 'trendlineBreakoutUp' },
-    { name: 'trendlineBreakoutDown', type: PatternType.Trend, labelKey: 'trendlineBreakoutDown' },
-    { name: 'trendlineBounceBullish', type: PatternType.Trend, labelKey: 'trendlineBounceBullish' },
-    { name: 'trendlineBounceBearish', type: PatternType.Trend, labelKey: 'trendlineBounceBearish' },
-    { name: 'htfTrendlineBreakoutUp', type: PatternType.Trend, labelKey: 'htfTrendlineBreakoutUp' },
-    { name: 'htfTrendlineBreakoutDown', type: PatternType.Trend, labelKey: 'htfTrendlineBreakoutDown' },
-    { name: 'htfTrendlineBounceBullish', type: PatternType.Trend, labelKey: 'htfTrendlineBounceBullish' },
-    { name: 'htfTrendlineBounceBearish', type: PatternType.Trend, labelKey: 'htfTrendlineBounceBearish' },
-
-    // Range Patterns
-    { name: 'failedBullishBreakout', type: PatternType.Range, labelKey: 'failedBullishBreakout' },
-    { name: 'failedBearishBreakout', type: PatternType.Range, labelKey: 'failedBearishBreakout' },
+    { name: 'bullishEngulfing', labelKey: 'pattern_bullishEngulfing' },
+    { name: 'bearishEngulfing', labelKey: 'pattern_bearishEngulfing' },
+    { name: 'threeWhiteSoldiers', labelKey: 'pattern_threeWhiteSoldiers' },
+    { name: 'threeBlackCrows', labelKey: 'pattern_threeBlackCrows' },
+    { name: 'dojiStar', labelKey: 'pattern_dojiStar' },
+    { name: 'hammer', labelKey: 'pattern_hammer' },
+    { name: 'hangingMan', labelKey: 'pattern_hangingMan' },
+    { name: 'shootingStar', labelKey: 'pattern_shootingStar' },
+    { name: 'morningStar', labelKey: 'pattern_morningStar' },
+    { name: 'eveningStar', labelKey: 'pattern_eveningStar' },
+    { name: 'choch', labelKey: 'pattern_choch' },
+    { name: 'bos', labelKey: 'pattern_bos' },
+    { name: 'orderBlock', labelKey: 'pattern_orderBlock' },
+    { name: 'fairValueGap', labelKey: 'pattern_fairValueGap' },
+    { name: 'liquidityGrab', labelKey: 'pattern_liquidityGrab' },
 ];
 
-export const BACKTEST_INITIAL_CAPITAL = 10000; // in USDT
-export const BACKTEST_COMMISSION_RATE = 0.001; // 0.1% per trade side
+
 export const TICK_SIZE = 0.0001; // Generic tick size for price calculations

@@ -26,68 +26,6 @@ export interface Candle {
   isClosed: boolean;
 }
 
-export enum PatternType {
-  Reversal = 'Reversal',
-  Trend = 'Trend',
-  Range = 'Range'
-}
-
-export enum SignalDirection {
-  Bullish = 'Bullish',
-  Bearish = 'Bearish'
-}
-
-export interface DetectedPattern {
-  index: number;
-  candle: Candle;
-  name: string;
-  type: PatternType;
-  direction: SignalDirection;
-  description: string;
-  priority: number; // Priority scale: 1 (Low) to 4 (Very High)
-  strengthScore: { // Contextual strength of the signal (0-100)
-    long: number;
-    short: number;
-  };
-  isKeySignal?: boolean;
-  anchorPoint?: TrendPoint;
-  trendlineId?: string;
-}
-
-export type BacktestStrategy = 'STRUCTURAL' | 'SHORT_TERM';
-
-export interface BacktestSettings {
-    strategy: BacktestStrategy;
-    htfTimeframe?: string; // High timeframe for short-term strategy
-    initialCapital: number;
-    commissionRate: number;
-    leverage: number;
-    positionSizePercent: number; // For fixed % position sizing
-    minRiskReward: number;
-    useAtrTrailingStop: boolean;
-    useAtrPositionSizing: boolean;
-    riskPerTradePercent: number; // For risk-based position sizing
-    // Optional entry filters
-    rsiPeriod?: number;
-    rsiBullLevel?: number;
-    rsiBearLevel?: number;
-    useVolumeFilter?: boolean;
-    volumeMaPeriod?: number;
-    volumeThreshold?: number;
-    // ATR settings for trailing stop or position sizing
-    atrPeriod?: number;
-    atrMultiplier?: number;
-    // New EMA Trend Filter
-    useEmaFilter?: boolean;
-    emaFastPeriod?: number;
-    emaSlowPeriod?: number;
-    // New ADX Trend Strength Filter
-    useAdxFilter?: boolean;
-    adxPeriod?: number;
-    adxThreshold?: number;
-}
-
-
 // FIX: Add missing AlphaToken type to resolve an import error in TokenListModal.tsx
 export interface AlphaToken {
   alphaId: string;
@@ -96,26 +34,6 @@ export interface AlphaToken {
   chainId: string;
   chainIconUrl: string;
   contractAddress: string | null;
-}
-
-export interface MultiTimeframeData {
-    timeframe: string;
-    candles: Candle[];
-    patterns: DetectedPattern[];
-    isPrimary: boolean;
-}
-
-export type MarketType = 'SPOT' | 'FUTURES';
-export type RiskAppetite = 'LOW' | 'MEDIUM' | 'HIGH';
-
-export interface AIDecision {
-    decision: 'LONG' | 'SHORT' | 'WAIT';
-    reasoning: string;
-    entryPrice: string;
-    stopLoss: number;
-    takeProfitLevels: number[];
-    confidenceScore: number;
-    riskWarning: string;
 }
 
 // FIX: Add missing types for authenticated Binance API responses.
@@ -180,51 +98,103 @@ export interface EquityDataPoint {
   time: number;
   equity: number;
 }
-export type TradeCloseReason = 'STOP_LOSS' | 'TAKE_PROFIT' | 'END_OF_DATA' | 'REVERSE_SIGNAL' | 'LIQUIDATION' | 'CANCELLED';
-export interface MultiTimeframeAnalysis {
-  timeframe: string;
-  patterns: DetectedPattern[];
-  trendlines: TrendLine[];
-  trend: TrendDirection;
-  rsi: {
-    value: number | null;
-    state: 'OVERBOUGHT' | 'OVERSOLD' | 'NEUTRAL';
-  };
+
+// FIX: Add missing types for patterns, signals, and backtesting.
+export enum SignalDirection {
+    Bullish = 'BULLISH',
+    Bearish = 'BEARISH',
 }
 
+export enum PatternType {
+    Reversal = 'REVERSAL',
+    Trend = 'TREND',
+    Range = 'RANGE',
+    SMC = 'SMC', // Smart Money Concepts
+}
+
+export interface DetectedPattern {
+    index: number;
+    name: string;
+    description: string;
+    candle: Candle;
+    direction: SignalDirection;
+    priority: 1 | 2 | 3 | 4; // 1-low, 4-very high
+    type: PatternType;
+    strengthScore: {
+        long: number;  // 0-100
+        short: number; // 0-100
+    };
+    isKeySignal: boolean;
+}
+
+export type BacktestStrategy = 'STRUCTURAL' | 'SHORT_TERM' | 'MTF_BUFF';
+
+export type TradeCloseReason = 'STOP_LOSS' | 'TAKE_PROFIT' | 'LIQUIDATION' | 'END_OF_DATA';
 
 export interface TrendPoint {
-  index: number;
-  price: number;
-  time: number;
+    index: number;
+    price: number;
+    time: number;
 }
 
 export interface TrendLine {
-  id: string;
-  p1: TrendPoint;
-  p2: TrendPoint;
-  touches: TrendPoint[];
-  type: 'UP' | 'DOWN';
-  strength: number; // 1 to 5 scale based on touches and length
-  slope: number;
-  intercept: number;
-  timeframe?: string;
-  channelLine?: {
-      intercept: number;
-  };
+    start: TrendPoint;
+    end: TrendPoint;
+    type: 'SUPPORT' | 'RESISTANCE';
 }
 
-export type TrendDirection = 'UPTREND' | 'DOWNTREND' | 'RANGE';
+
+export interface BuffZone {
+    id: string;
+    startPrice: number;
+    endPrice: number;
+    startTime: number;
+    endTime: number;
+    score: number;
+    direction: SignalDirection;
+}
+
+export interface BacktestSettings {
+    strategy: BacktestStrategy;
+    initialCapital: number;
+    commissionRate: number;
+    leverage?: number;
+    positionSizePercent?: number;
+    minRiskReward?: number;
+    rrMode?: 'simple' | 'dynamic';
+    dynamicMinRiskReward?: { [key: number]: number };
+    useAtrTrailingStop?: boolean;
+    useAtrPositionSizing?: boolean;
+    riskPerTradePercent?: number;
+    rsiPeriod?: number;
+    rsiBullLevel?: number;
+    rsiBearLevel?: number;
+    useVolumeFilter?: boolean;
+    volumeMaPeriod?: number;
+    volumeThreshold?: number;
+    atrPeriod?: number;
+    atrMultiplier?: number;
+    useEmaFilter?: boolean;
+    emaFastPeriod?: number;
+    emaSlowPeriod?: number;
+    useAdxFilter?: boolean;
+    adxPeriod?: number;
+    adxThreshold?: number;
+    buffZoneScoreThreshold?: number;
+    buffMACDWeight?: number;
+    buffFibWeight?: number;
+    buffSRWeight?: number;
+}
 
 export interface PredictionResult {
-  status: 'PLAN_TRADE' | 'SKIP_SIGNAL';
-  reason: string;
-  pattern?: DetectedPattern;
-  direction?: 'LONG' | 'SHORT';
-  entryPrice?: number;
-  slPrice?: number;
-  tpPrice?: number;
-  rr?: number;
+    status: 'PLAN_TRADE' | 'SKIP_SIGNAL';
+    reason: string;
+    pattern: DetectedPattern | null;
+    direction?: 'LONG' | 'SHORT';
+    entryPrice?: number;
+    slPrice?: number;
+    tpPrice?: number;
+    rr?: number;
 }
 
 // Indicator types
@@ -234,8 +204,17 @@ export interface BBands {
     lower: number | null;
 }
 
+export interface MACDValue {
+    macd: number | null;
+    signal: number | null;
+    histogram: number | null;
+}
+
 export interface IndicatorData {
     ema20?: (number | null)[];
+    ema24?: (number | null)[];
+    ema52?: (number | null)[];
     bb20?: (BBands | null)[];
     rsi14?: (number | null)[];
+    macd?: (MACDValue | null)[];
 }
