@@ -1,33 +1,25 @@
 
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ResponsiveContainer, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Bar, ReferenceLine, Line, Cell } from 'recharts';
-// FIX: Add missing imports for backtest visualization props.
-import type { Candle, IndicatorData, PriceAlert, DetectedPattern, TrendPoint, TrendLine } from '../types';
-import { TradeLogEvent } from '../services/backtestService';
+import { ResponsiveContainer, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Bar, ReferenceLine, Line, Cell, ReferenceArea, Scatter } from 'recharts';
+import type { Candle, IndicatorData, SRZone, TradeLogEvent, PredictionResult } from '../types';
 import { ZoomInIcon } from './icons/ZoomInIcon';
 import { ZoomOutIcon } from './icons/ZoomOutIcon';
 import { ChevronLeftIcon } from './icons/ChevronLeftIcon';
 import { ChevronRightIcon } from './icons/ChevronRightIcon';
 import { ExpandIcon } from './icons/ExpandIcon';
 import { useLanguage } from '../contexts/LanguageContext';
-import { CloseIcon } from './icons/CloseIcon';
+import { BuyTradeIcon } from './icons/BuyTradeIcon';
+import { SellTradeIcon } from './icons/SellTradeIcon';
 
 interface PriceChartProps {
     data: Candle[];
     isHistorical: boolean;
     indicatorData: IndicatorData;
     focusedTime?: number | null;
-    // FIX: Add props for backtest visualization to resolve type error in BacktestModal.
-    swingHighs?: TrendPoint[];
-    swingLows?: TrendPoint[];
-    trendlines?: TrendLine[];
-    showSwingLines?: boolean;
-    showTrendlines?: boolean;
-    patterns?: DetectedPattern[];
+    srZones?: SRZone[];
     tradeLog?: TradeLogEvent[];
-    executedTradePatternIndices?: Set<number>;
-    skippedTradePatternIndices?: Set<number>;
+    isInteractive?: boolean;
+    predictionResult?: PredictionResult | null;
 }
 
 const CustomCandlestick = (props: any) => {
@@ -72,11 +64,11 @@ const CustomTooltip = ({ active, payload, label, t, formatPrice }: any) => {
          <p className={`text-${data.isBullish ? 'green' : 'red'}-400`}>
             <span className="font-bold">{t('tooltipLow')}:</span> {formatPrice(data.low)} <span className="font-bold ml-2">{t('tooltipClose')}:</span> {formatPrice(data.close)}
         </p>
-        <p className="text-gray-400"><span className="font-bold">{t('tooltipVolume')}:</span> {data.volume.toFixed(2)}</p>
+        <p className="text-gray-400"><span className="font-bold">{t('tooltipVolume')}:</span> {typeof data.volume === 'number' ? data.volume.toFixed(2) : '-'}</p>
         {data.ema20 && <p className="text-cyan-400">EMA(20): {formatPrice(data.ema20)}</p>}
         {data.ema24 && <p className="text-yellow-400">EMA(24): {formatPrice(data.ema24)}</p>}
         {data.ema52 && <p className="text-pink-400">EMA(52): {formatPrice(data.ema52)}</p>}
-        {data.rsi14 && <p className="text-purple-400">RSI(14): {data.rsi14.toFixed(2)}</p>}
+        {typeof data.rsi14 === 'number' && <p className="text-purple-400">RSI(14): {data.rsi14.toFixed(2)}</p>}
         {data.macd && (
             <>
                 <p className="text-indigo-400">MACD: {data.macd.macd?.toFixed(4)}</p>
@@ -90,7 +82,31 @@ const CustomTooltip = ({ active, payload, label, t, formatPrice }: any) => {
   return null;
 };
 
-const PriceChartComponent: React.FC<PriceChartProps> = ({ data, isHistorical, indicatorData, focusedTime }) => {
+const TradeShape = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (!payload || typeof cx !== 'number' || typeof cy !== 'number' || !isFinite(cx) || !isFinite(cy)) {
+        return null;
+    }
+
+    const { type, direction, profit } = payload;
+
+    if (type === 'ENTRY') {
+        return direction === 'LONG' 
+            ? <BuyTradeIcon cx={cx} cy={cy} /> 
+            : <SellTradeIcon cx={cx} cy={cy} />;
+    }
+    
+    // EXIT
+    const fill = profit > 0 ? '#22C55E' : '#EF4444';
+    return (
+       <g transform={`translate(${cx}, ${cy})`}>
+         <circle cx="0" cy="0" r="4" fill={fill} stroke="#1F2937" strokeWidth="1" />
+       </g>
+    );
+};
+
+
+const PriceChartComponent: React.FC<PriceChartProps> = ({ data, isHistorical, indicatorData, focusedTime, srZones = [], tradeLog = [], isInteractive = true, predictionResult }) => {
     const { t } = useLanguage();
     const [range, setRange] = useState({ start: 0, end: data.length });
     const prevDataRef = useRef<Candle[] | null>(null);
@@ -100,23 +116,30 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, isHistorical, in
         const prevData = prevDataRef.current;
         const isFullReload = !prevData || data.length === 0 || prevData.length === 0 || prevData[0].time !== data[0].time;
         if (isFullReload) {
-            setRange({ start: Math.max(0, data.length - 200), end: data.length });
+            if (isInteractive) {
+                setRange({ start: Math.max(0, data.length - 200), end: data.length });
+            } else {
+                setRange({ start: 0, end: data.length });
+            }
         } else {
-            const wasAtTheEnd = range.end === prevData.length;
-            if (wasAtTheEnd && !isHistorical) {
-                setRange(currentRange => {
-                    const numVisibleCandles = currentRange.end - currentRange.start;
-                    const newEnd = data.length;
-                    const newStart = Math.max(0, newEnd - numVisibleCandles);
-                    return { start: newStart, end: newEnd };
-                });
+            if (isInteractive) {
+                const wasAtTheEnd = range.end === (prevData?.length || 0);
+                if (wasAtTheEnd && !isHistorical) {
+                    setRange(currentRange => {
+                        const numVisibleCandles = currentRange.end - currentRange.start;
+                        const newEnd = data.length;
+                        const newStart = Math.max(0, newEnd - numVisibleCandles);
+                        return { start: newStart, end: newEnd };
+                    });
+                }
             }
         }
         prevDataRef.current = data;
-    }, [data, isHistorical]);
+    }, [data, isHistorical, isInteractive]);
+
 
     useEffect(() => {
-        if (focusedTime && data.length > 0) {
+        if (focusedTime && data.length > 0 && isInteractive) {
             const targetIndex = data.findIndex(d => d.time >= focusedTime);
             if (targetIndex !== -1) {
                 const currentSpan = range.end - range.start;
@@ -135,7 +158,7 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, isHistorical, in
                 setRange({ start: newStart, end: newEnd });
             }
         }
-    }, [focusedTime, data]);
+    }, [focusedTime, data, isInteractive]);
 
 
     const combinedData = useMemo(() => {
@@ -221,24 +244,38 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, isHistorical, in
     const latestPrice = data.length > 0 ? data[data.length - 1].close : null;
 
     if (!data || data.length === 0) {
-        return <div className="h-[600px] flex items-center justify-center text-gray-500">{t('noData')}</div>;
+        return <div className="h-full flex items-center justify-center text-gray-500">{t('noData')}</div>;
     }
 
     return (
-        <div className="relative" style={{ width: '100%', height: '100%', cursor: 'default' }}>
-             <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-gray-800/50 backdrop-blur-sm p-1 rounded-md border border-gray-700">
-                <button title={t('panLeft')} onClick={() => handlePan('left')} disabled={!canPanLeft} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ChevronLeftIcon className="w-5 h-5" /></button>
-                <button title={t('panRight')} onClick={() => handlePan('right')} disabled={!canPanRight} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ChevronRightIcon className="w-5 h-5" /></button>
-                <button title={t('zoomIn')} onClick={() => handleZoom(0.8)} disabled={!canZoomIn} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ZoomInIcon className="w-5 h-5" /></button>
-                <button title={t('zoomOut')} onClick={() => handleZoom(1.2)} disabled={range.end-range.start >= data.length} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ZoomOutIcon className="w-5 h-5" /></button>
-                <button title={t('resetZoom')} onClick={handleReset} disabled={!isZoomedIn} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ExpandIcon className="w-5 h-5" /></button>
-            </div>
+        <div className="relative" style={{ width: '100%', height: '100%', cursor: isInteractive ? 'default' : 'auto' }}>
+            {isInteractive && (
+                <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-gray-800/50 backdrop-blur-sm p-1 rounded-md border border-gray-700">
+                    <button title={t('panLeft')} onClick={() => handlePan('left')} disabled={!canPanLeft} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ChevronLeftIcon className="w-5 h-5" /></button>
+                    <button title={t('panRight')} onClick={() => handlePan('right')} disabled={!canPanRight} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ChevronRightIcon className="w-5 h-5" /></button>
+                    <button title={t('zoomIn')} onClick={() => handleZoom(0.8)} disabled={!canZoomIn} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ZoomInIcon className="w-5 h-5" /></button>
+                    <button title={t('zoomOut')} onClick={() => handleZoom(1.2)} disabled={range.end-range.start >= data.length} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ZoomOutIcon className="w-5 h-5" /></button>
+                    <button title={t('resetZoom')} onClick={handleReset} disabled={!isZoomedIn} className="p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"><ExpandIcon className="w-5 h-5" /></button>
+                </div>
+            )}
             <ResponsiveContainer height={mainChartHeight}>
-                <ComposedChart data={visibleData} margin={{ top: 20, right: 20, bottom: 0, left: 20 }} syncId="priceSync" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
+                <ComposedChart data={visibleData} margin={{ top: 20, right: 20, bottom: 0, left: 20 }} syncId="priceSync" onMouseMove={isInteractive ? handleMouseMove : undefined} onMouseLeave={isInteractive ? handleMouseLeave : undefined}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#4B5563" />
                     <XAxis dataKey="time" tickFormatter={tickFormatter} stroke="#9CA3AF" minTickGap={80} interval="preserveStartEnd" domain={['dataMin', 'dataMax']} type="number" scale="time" tick={false} />
                     <YAxis orientation="right" domain={yDomain} stroke="#9CA3AF" tickFormatter={(v) => formatPrice(Number(v))} allowDataOverflow={true} type="number" />
                     <Tooltip content={<CustomTooltip t={t} formatPrice={formatPrice} />} />
+
+                    {srZones.map((zone, index) => (
+                        <ReferenceArea 
+                            key={`zone-${index}`}
+                            y1={zone.startPrice}
+                            y2={zone.endPrice}
+                            ifOverflow="visible"
+                            fill={zone.type === 'support' ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)"}
+                            stroke={zone.type === 'support' ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}
+                            strokeOpacity={1}
+                        />
+                    ))}
 
                     {indicatorData.ema20 && <Line type="monotone" dataKey="ema20" stroke="#06B6D4" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
                     {indicatorData.ema24 && <Line type="monotone" dataKey="ema24" stroke="#FBBF24" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
@@ -247,9 +284,64 @@ const PriceChartComponent: React.FC<PriceChartProps> = ({ data, isHistorical, in
                     {indicatorData.bb20 && <Line dataKey="bb20.lower" stroke="#FBBF24" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />}
                     
                     {!isHistorical && latestPrice !== null && (<ReferenceLine y={latestPrice} stroke="rgb(252 211 77 / 0.9)" strokeDasharray="3 3" strokeWidth={1.5} ifOverflow="extendDomain" label={{ position: 'right', value: formatPrice(latestPrice), fill: 'rgb(252 211 77)', fontSize: 11, fontWeight: 'bold' }} />)}
-                    {mousePrice !== null && (<ReferenceLine y={mousePrice} stroke="#9CA3AF" strokeDasharray="2 2" strokeWidth={1} ifOverflow="visible" label={{ position: 'right', value: formatPrice(mousePrice), fill: '#D1D5DB', fontSize: 11, }} />)}
+                    {isInteractive && mousePrice !== null && (<ReferenceLine y={mousePrice} stroke="#9CA3AF" strokeDasharray="2 2" strokeWidth={1} ifOverflow="visible" label={{ position: 'right', value: formatPrice(mousePrice), fill: '#D1D5DB', fontSize: 11, }} />)}
                     {focusedTime && <ReferenceLine x={focusedTime} stroke="cyan" strokeOpacity={0.7} />}
+
+                    {/* Prediction Visuals */}
+                    {predictionResult && (
+                        <>
+                            {predictionResult.srZones?.map((zone, index) => (
+                                <ReferenceArea 
+                                    key={`pred-zone-${index}`}
+                                    y1={zone.startPrice}
+                                    y2={zone.endPrice}
+                                    ifOverflow="visible"
+                                    fill={zone.type === 'support' ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)"}
+                                    stroke={zone.type === 'support' ? "rgba(16, 185, 129, 0.4)" : "rgba(239, 68, 68, 0.4)"}
+                                    strokeOpacity={1}
+                                    strokeDasharray="5 5"
+                                />
+                            ))}
+                            {predictionResult.status === 'PLAN_TRADE' && (
+                                <>
+                                    {typeof predictionResult.entryPrice === 'number' && (
+                                        <ReferenceLine 
+                                            y={predictionResult.entryPrice} 
+                                            stroke="#f59e0b"
+                                            strokeDasharray="4 4"
+                                            strokeWidth={1.5}
+                                            ifOverflow="extendDomain"
+                                            label={{ position: 'right', value: `Entry: ${formatPrice(predictionResult.entryPrice)}`, fill: '#f59e0b', fontSize: 11, fontWeight: 'bold' }}
+                                        />
+                                    )}
+                                    {typeof predictionResult.tpPrice === 'number' && (
+                                        <ReferenceLine 
+                                            y={predictionResult.tpPrice} 
+                                            stroke="#22c55e"
+                                            strokeDasharray="4 4"
+                                            strokeWidth={1.5}
+                                            ifOverflow="extendDomain"
+                                            label={{ position: 'right', value: `TP: ${formatPrice(predictionResult.tpPrice)}`, fill: '#22c55e', fontSize: 11, fontWeight: 'bold' }}
+                                        />
+                                    )}
+                                    {typeof predictionResult.slPrice === 'number' && (
+                                        <ReferenceLine 
+                                            y={predictionResult.slPrice} 
+                                            stroke="#ef4444"
+                                            strokeDasharray="4 4"
+                                            strokeWidth={1.5}
+                                            ifOverflow="extendDomain"
+                                            label={{ position: 'right', value: `SL: ${formatPrice(predictionResult.slPrice)}`, fill: '#ef4444', fontSize: 11, fontWeight: 'bold' }}
+                                        />
+                                    )}
+                                </>
+                            )}
+                        </>
+                    )}
+
                     <Bar dataKey="wick" shape={CustomCandlestick} isAnimationActive={false} />
+
+                    <Scatter data={tradeLog} dataKey="price" shape={<TradeShape />} isAnimationActive={false} zIndex={100} />
 
                 </ComposedChart>
             </ResponsiveContainer>

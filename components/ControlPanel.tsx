@@ -1,5 +1,4 @@
 
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { TIMEFRAMES } from '../constants';
 import { RefreshIcon } from './icons/RefreshIcon';
@@ -8,6 +7,9 @@ import { PriceAlert } from '../types';
 import { AlertIcon } from './icons/AlertIcon';
 import { CloseIcon } from './icons/CloseIcon';
 import { IndicatorIcon } from './icons/IndicatorIcon';
+import { SparklesIcon } from './icons/SparklesIcon';
+import { CalculatorIcon } from './icons/CalculatorIcon';
+import { LightBulbIcon } from './icons/LightBulbIcon';
 
 interface ControlPanelProps {
     symbols: { value: string; label: string; baseAssetLogoUrl?: string; quoteAssetLogoUrl?: string; isAlpha?: boolean; }[];
@@ -27,6 +29,11 @@ interface ControlPanelProps {
     removeAlert: (symbol: string, id: string) => void;
     indicators: Record<string, boolean>;
     setIndicators: (indicators: Record<string, boolean>) => void;
+    onRunAnalysis: () => void;
+    isAnalysisLoading: boolean;
+    onOpenBacktest: () => void;
+    onRunPrediction: () => void;
+    isPredicting: boolean;
 }
 
 const formatDateForInput = (date: Date): string => {
@@ -65,10 +72,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     endDate, setEndDate,
     alerts, addAlert, removeAlert,
     indicators, setIndicators,
+    onRunAnalysis, isAnalysisLoading,
+    onOpenBacktest,
+    onRunPrediction, isPredicting,
 }) => {
     const { locale, setLocale, t } = useLanguage();
     const [openPopover, setOpenPopover] = useState<string | null>(null);
     
+    // Draft state for date pickers
+    const [draftStartDate, setDraftStartDate] = useState(startDate);
+    const [draftEndDate, setDraftEndDate] = useState(endDate);
+
     const [newAlertPrice, setNewAlertPrice] = useState('');
     const [isSymbolDropdownOpen, setIsSymbolDropdownOpen] = useState(false);
     const [symbolSearch, setSymbolSearch] = useState('');
@@ -83,6 +97,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
     const baseSelectorClasses = "bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all duration-200 text-sm";
     const disabledClasses = "disabled:opacity-50 disabled:cursor-not-allowed";
+
+    useEffect(() => {
+        // Sync draft dates if parent dates change (e.g., on symbol change or initial load)
+        setDraftStartDate(startDate);
+        setDraftEndDate(endDate);
+    }, [startDate, endDate]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -144,6 +164,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         setIndicators({ ...indicators, [key]: checked });
     };
 
+    const handleApplyDateRange = () => {
+        // Validate date range before applying
+        if (draftEndDate <= draftStartDate) {
+            alert(t('dateRangeError')); // Simple alert for now
+            return;
+        }
+        setStartDate(draftStartDate);
+        setEndDate(draftEndDate);
+    };
+
+    const hasDateChanged = draftStartDate.getTime() !== startDate.getTime() || draftEndDate.getTime() !== endDate.getTime();
     const currentAlerts = alerts[symbol] || [];
 
     return (
@@ -165,14 +196,18 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             <div className="flex items-center gap-1">
                 <div className="relative"><button title={t('indicators')} data-popover-toggle onClick={() => togglePopover('indicator')} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><IndicatorIcon className="w-5 h-5" /></button><Popover isOpen={openPopover === 'indicator'} targetRef={popoverRefs.indicator}><div className="p-3 space-y-2"><h4 className="font-semibold text-gray-300 text-sm">{t('indicators')}</h4>{Object.entries(indicators).map(([key, value]) => (<label key={key} className="flex items-center gap-2 text-gray-400 cursor-pointer text-sm"><input type="checkbox" checked={value} onChange={e => handleIndicatorChange(key, e.target.checked)} className="form-checkbox bg-gray-700 border-gray-500 text-cyan-500 rounded focus:ring-cyan-500" />{t(`indicator-${key}`)}</label>))}</div></Popover></div>
                 <div className="relative"><button title={t('setPriceAlert')} data-popover-toggle onClick={() => togglePopover('alert')} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><AlertIcon className="w-5 h-5" /></button><Popover isOpen={openPopover === 'alert'} targetRef={popoverRefs.alert}><div className="p-3 space-y-3"><h4 className="font-semibold text-gray-300 text-sm">{t('setPriceAlertFor', { symbol })}</h4><div className="flex gap-2"><input type="number" placeholder={t('targetPrice')} value={newAlertPrice} onChange={e => setNewAlertPrice(e.target.value)} className="flex-grow bg-gray-900 border border-gray-600 rounded-md px-2 py-1 text-sm" /><button onClick={handleAddAlert} className="px-3 py-1 text-sm font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-md">{t('add')}</button></div>{currentAlerts.length > 0 && (<div className="space-y-1"><h5 className="text-xs text-gray-400">{t('activeAlerts')}</h5><ul className="text-sm text-gray-300">{currentAlerts.map(a => (<li key={a.id} className="flex justify-between items-center"><span className="font-mono">{a.price}</span><button onClick={() => removeAlert(symbol, a.id)}><CloseIcon className="w-4 h-4 text-gray-500 hover:text-red-400" /></button></li>))}</ul></div>)}</div></Popover></div>
+                <button title={t('predictNextMove')} onClick={onRunPrediction} disabled={isLoading || isPredicting} className={`${baseSelectorClasses} ${disabledClasses} p-2 ${isPredicting ? 'text-yellow-400 animate-pulse' : ''}`}><LightBulbIcon className="w-5 h-5" /></button>
+                <button title={t('aiAnalysisTitle')} onClick={onRunAnalysis} disabled={isLoading || isAnalysisLoading} className={`${baseSelectorClasses} ${disabledClasses} p-2 ${isAnalysisLoading ? 'text-cyan-400 animate-pulse' : ''}`}><SparklesIcon className="w-5 h-5" /></button>
+                <button title={t('backtestTitle')} onClick={onOpenBacktest} disabled={isLoading} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><CalculatorIcon className="w-5 h-5" /></button>
             </div>
 
             <div className="flex-grow"></div>
 
             {/* Group 3: Date Range & Actions */}
             <div className="flex items-center gap-2">
-                <input type="datetime-local" id="start-date" value={formatDateForInput(startDate)} onChange={(e) => setStartDate(new Date(e.target.value))} disabled={isLoading} className={`${baseSelectorClasses} ${disabledClasses} w-44`} />
-                <input type="datetime-local" id="end-date" value={formatDateForInput(endDate)} onChange={(e) => setEndDate(new Date(e.target.value))} disabled={isLoading} className={`${baseSelectorClasses} ${disabledClasses} w-44`} />
+                <input type="datetime-local" id="start-date" value={formatDateForInput(draftStartDate)} onChange={(e) => setDraftStartDate(new Date(e.target.value))} disabled={isLoading} className={`${baseSelectorClasses} ${disabledClasses} w-44`} />
+                <input type="datetime-local" id="end-date" value={formatDateForInput(draftEndDate)} onChange={(e) => setDraftEndDate(new Date(e.target.value))} disabled={isLoading} className={`${baseSelectorClasses} ${disabledClasses} w-44`} />
+                <button onClick={handleApplyDateRange} disabled={!hasDateChanged || isLoading} className={`${baseSelectorClasses} ${disabledClasses} bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-600`}>{t('applyDateRange')}</button>
                 <button onClick={onRefresh} disabled={isLoading} aria-label={t('refreshAriaLabel')} className={`${baseSelectorClasses} ${disabledClasses} p-2`}><RefreshIcon className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} /></button>
                 <select id="language-select" value={locale} onChange={(e) => setLocale(e.target.value as 'en' | 'zh')} disabled={isLoading} className={`${baseSelectorClasses} ${disabledClasses}`}><option value="en">English</option><option value="zh">中文</option></select>
             </div>

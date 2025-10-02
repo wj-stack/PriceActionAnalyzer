@@ -26,7 +26,6 @@ export interface Candle {
   isClosed: boolean;
 }
 
-// FIX: Add missing AlphaToken type to resolve an import error in TokenListModal.tsx
 export interface AlphaToken {
   alphaId: string;
   symbol: string;
@@ -36,7 +35,6 @@ export interface AlphaToken {
   contractAddress: string | null;
 }
 
-// FIX: Add missing types for authenticated Binance API responses.
 export interface AccountBalance {
   asset: string;
   free: string;
@@ -86,20 +84,17 @@ export interface PriceAlert {
   id: string;
   price: number;
 }
-// FIX: Add missing OpenPosition type for simulation panel.
 export interface OpenPosition {
   type: 'LONG' | 'SHORT';
   entryPrice: number;
   size: number;
 }
 
-// FIX: Add missing EquityDataPoint type for equity chart.
 export interface EquityDataPoint {
   time: number;
   equity: number;
 }
 
-// FIX: Add missing types for patterns, signals, and backtesting.
 export enum SignalDirection {
     Bullish = 'BULLISH',
     Bearish = 'BEARISH',
@@ -129,6 +124,7 @@ export interface DetectedPattern {
 
 export type BacktestStrategy = 'STRUCTURAL' | 'SHORT_TERM' | 'MTF_BUFF';
 
+export type TradeOpenReason = 'HTF_ZONE_RSI_OVERSOLD' | 'HTF_ZONE_RSI_OVERBOUGHT' | 'HTF_ZONE_SMC_IMBALANCE' | 'HTF_ZONE_CHOCH_REVERSAL' | 'HTF_ZONE_PINBAR';
 export type TradeCloseReason = 'STOP_LOSS' | 'TAKE_PROFIT' | 'LIQUIDATION' | 'END_OF_DATA';
 
 export interface TrendPoint {
@@ -137,53 +133,52 @@ export interface TrendPoint {
     time: number;
 }
 
-export interface TrendLine {
-    start: TrendPoint;
-    end: TrendPoint;
-    type: 'SUPPORT' | 'RESISTANCE';
+
+export interface SwingPoint {
+    price: number;
+    time: number;
+    type: 'high' | 'low';
+    index: number;
 }
 
-
-export interface BuffZone {
-    id: string;
+export interface SRZone {
     startPrice: number;
     endPrice: number;
-    startTime: number;
-    endTime: number;
+    type: 'support' | 'resistance';
+    touches: number;
     score: number;
-    direction: SignalDirection;
+    confluence?: {
+        hasFib?: boolean;
+        fibLevel?: number;
+        hasMacdDiv?: boolean;
+    };
 }
 
 export interface BacktestSettings {
     strategy: BacktestStrategy;
     initialCapital: number;
     commissionRate: number;
-    leverage?: number;
-    positionSizePercent?: number;
-    minRiskReward?: number;
-    rrMode?: 'simple' | 'dynamic';
-    dynamicMinRiskReward?: { [key: number]: number };
-    useAtrTrailingStop?: boolean;
-    useAtrPositionSizing?: boolean;
-    riskPerTradePercent?: number;
-    rsiPeriod?: number;
-    rsiBullLevel?: number;
-    rsiBearLevel?: number;
-    useVolumeFilter?: boolean;
-    volumeMaPeriod?: number;
-    volumeThreshold?: number;
-    atrPeriod?: number;
-    atrMultiplier?: number;
-    useEmaFilter?: boolean;
-    emaFastPeriod?: number;
-    emaSlowPeriod?: number;
-    useAdxFilter?: boolean;
-    adxPeriod?: number;
-    adxThreshold?: number;
-    buffZoneScoreThreshold?: number;
-    buffMACDWeight?: number;
-    buffFibWeight?: number;
-    buffSRWeight?: number;
+    leverage: number;
+    riskPerTradePercent: number;
+    minRiskReward: number;
+    followHtfTrend: boolean;
+    allowRangeTrading: boolean;
+    
+    // Layer 1: HTF Zone Identification
+    srWeight: number;
+    macdWeight: number;
+    fibWeight: number;
+    zoneScoreThreshold: number;
+    useMacdDivergence: boolean;
+    
+    // Layer 2: LTF Entry Engine
+    useSMC: boolean;
+    useCHOCH: boolean;
+    usePinbar: boolean;
+    
+    // Shared Indicator Settings
+    atrPeriod: number;
+    atrMultiplier: number;
 }
 
 export interface PredictionResult {
@@ -195,6 +190,7 @@ export interface PredictionResult {
     slPrice?: number;
     tpPrice?: number;
     rr?: number;
+    srZones?: SRZone[];
 }
 
 // Indicator types
@@ -217,4 +213,60 @@ export interface IndicatorData {
     bb20?: (BBands | null)[];
     rsi14?: (number | null)[];
     macd?: (MACDValue | null)[];
+}
+
+export interface Imbalance {
+    startPrice: number;
+    endPrice: number;
+    index: number;
+}
+
+// AI Analysis Types
+export interface MultiTimeframeDataPoint {
+  name: string;
+  trend: 'Uptrend' | 'Downtrend' | 'Range';
+  rsi: 'Overbought' | 'Oversold' | 'Neutral';
+}
+
+export interface MultiTimeframeData {
+  timeframes: MultiTimeframeDataPoint[];
+}
+
+// Backtesting Types
+export interface TradeLogEvent {
+    type: 'ENTRY' | 'EXIT';
+    direction: 'LONG' | 'SHORT';
+    time: number;
+    price: number;
+    positionSize?: number; // Size in base asset (e.g., BTC)
+    equity: number;
+    reason?: string;
+    profit?: number;
+    profitPercent?: number;
+    riskRewardRatio?: number;
+    stopLoss?: number;
+    takeProfit?: number;
+    leverage?: number;
+    liquidationPrice?: number;
+}
+
+export interface BacktestKPIs {
+    netProfit: number;
+    netProfitPercent: number;
+    totalTrades: number;
+    winRate: number;
+    profitFactor: number | null;
+    maxDrawdown: number;
+    maxDrawdownPercent: number;
+    avgTradePnl: number;
+    avgWin: number | null;
+    avgLoss: number | null;
+    expectancy: number;
+}
+
+export interface BacktestResult {
+    kpis: BacktestKPIs;
+    equityCurve: EquityDataPoint[];
+    tradeLog: TradeLogEvent[];
+    srZones: SRZone[];
 }
