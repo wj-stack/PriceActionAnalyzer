@@ -35,15 +35,18 @@ Based *only* on the Trend and RSI data provided, generate a concise trading anal
 3.  **Outline a Potential Action Plan:** Based on your bias, what should a trader look for next? Be specific. (e.g., "Wait for a pullback on the ${context.timeframes[0].name} chart and look for bullish confirmation patterns as long as the 4h trend remains bullish.").
 
 Structure your response with these exact headings in markdown bold: **Outlook**, **Bias**, and **Action Plan**. Keep it brief and actionable. Do not invent data that was not provided.`;
+  
+  console.log("[GeminiService] Sending prompt to AI:", prompt);
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
     });
+    console.log("[GeminiService] Received raw response from AI:", response.text);
     return response.text;
   } catch (error) {
-    console.error("Gemini API call failed:", error);
+    console.error("[GeminiService] Gemini API call failed:", error);
     throw new Error("Failed to get analysis from AI service.");
   }
 };

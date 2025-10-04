@@ -147,10 +147,17 @@ export interface SRZone {
     type: 'support' | 'resistance';
     touches: number;
     score: number;
+    scoreDetails?: {
+        srScore: number;
+        fibScore: number;
+        macdScore: number;
+    };
     confluence?: {
         hasFib?: boolean;
         fibLevel?: number;
         hasMacdDiv?: boolean;
+        hasMacdZeroCross?: 'bullish' | 'bearish';
+        isMacdExtreme?: 'overbought' | 'oversold';
     };
 }
 
@@ -248,6 +255,12 @@ export interface TradeLogEvent {
     takeProfit?: number;
     leverage?: number;
     liquidationPrice?: number;
+    zoneScoreDetails?: {
+        total: number;
+        sr: number;
+        fib: number;
+        macd: number;
+    };
 }
 
 export interface BacktestKPIs {

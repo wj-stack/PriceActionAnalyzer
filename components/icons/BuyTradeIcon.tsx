@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export const BuyTradeIcon: React.FC<React.SVGProps<SVGSVGElement> & { cx?: number, cy?: number }> = ({ cx = 0, cy = 0, ...props }) => (

@@ -12,10 +12,10 @@ interface BacktestSettingsPanelProps {
 
 export const defaultSettings: BacktestSettings = {
     strategy: 'MTF_BUFF',
-    initialCapital: 10000,
-    commissionRate: 0.04,
+    initialCapital: 1000,
+    commissionRate: 0.1,
     leverage: 10,
-    riskPerTradePercent: 1,
+    riskPerTradePercent: 10,
     minRiskReward: 2,
     followHtfTrend: true,
     allowRangeTrading: true,

@@ -1,4 +1,3 @@
-
 import type { Candle, BacktestSettings, BacktestResult, EquityDataPoint, TradeLogEvent, BacktestKPIs, OpenPosition, TradeOpenReason, SwingPoint, SRZone, PredictionResult } from '../types';
 import { calculateRSI, calculateATR, findSwingPoints, calculateMACD, findMacdDivergence, findFibRetracementLevels, isPinbar, findCHOCH, findImbalances, calculateEMA, getTrend } from './indicatorService';
 
@@ -10,6 +9,13 @@ const identifyHTFZones = (htfCandles: Candle[], settings: Pick<BacktestSettings,
     const htfMacd = calculateMACD(htfCandles);
     const swingPoints = findSwingPoints(htfCandles, 5);
     const zones: { points: SwingPoint[], type: 'support' | 'resistance' }[] = [];
+
+    // Pre-calculate MACD extremes once for efficiency
+    const allHistValues = htfMacd.map(m => m?.histogram).filter(h => h !== null && !isNaN(h)) as number[];
+    const maxHist = Math.max(...allHistValues);
+    const minHist = Math.min(...allHistValues);
+    const overboughtThreshold = maxHist * 0.85;
+    const oversoldThreshold = minHist * 0.85;
 
     for (const point of swingPoints) {
         let placed = false;
@@ -35,30 +41,82 @@ const identifyHTFZones = (htfCandles: Candle[], settings: Pick<BacktestSettings,
         const startPrice = Math.min(...prices);
         const endPrice = Math.max(...prices);
         const touches = zone.points.length;
-        const confluence: SRZone['confluence'] = {};
-
+        
         let fibScore = 0;
+        let fibConfluence: { hasFib?: boolean; fibLevel?: number; } = {};
         for (const level of fibLevels) {
             if (level.price >= startPrice && level.price <= endPrice) {
                 fibScore = Math.max(fibScore, (level.level === 0.618 || level.level === 0.5) ? 1.0 : 0.5);
-                confluence.hasFib = true;
-                confluence.fibLevel = level.level;
+                fibConfluence.hasFib = true;
+                fibConfluence.fibLevel = level.level;
                 break;
             }
         }
         
         let macdScore = 0;
+        const confluence: SRZone['confluence'] = { ...fibConfluence };
+        const touchIndices = zone.points.map(p => p.index);
+
+        // 1. Divergence Score
         if (settings.useMacdDivergence) {
             const mostRecentTouch = zone.points.reduce((latest, p) => p.index > latest.index ? p : latest, zone.points[0]);
             const divergenceType = findMacdDivergence(htfCandles, htfMacd, mostRecentTouch.index, 30);
             if ((divergenceType === 'bullish' && zone.type === 'support') || (divergenceType === 'bearish' && zone.type === 'resistance')) {
-                macdScore = 1.5;
+                macdScore += 1.5; // High score for strong signal
                 confluence.hasMacdDiv = true;
             }
         }
 
-        const score = (touches * settings.srWeight) + (fibScore * settings.fibWeight) + (macdScore * settings.macdWeight);
-        return { startPrice, endPrice, type: zone.type, touches, score, confluence };
+        // 2. Zero-Line Interaction & Extreme Reading Scores
+        for (const index of touchIndices) {
+            if (!htfMacd[index]) continue;
+
+            const currHist = htfMacd[index]?.histogram;
+            const prevHist = index > 0 ? htfMacd[index - 1]?.histogram : null;
+
+            // Zero-Line Bounce/Rejection
+            if (prevHist !== null && currHist !== null) {
+                if (zone.type === 'support' && prevHist < 0 && currHist >= 0) {
+                    macdScore += 1.0;
+                    confluence.hasMacdZeroCross = 'bullish';
+                }
+                if (zone.type === 'resistance' && prevHist > 0 && currHist <= 0) {
+                    macdScore += 1.0;
+                    confluence.hasMacdZeroCross = 'bearish';
+                }
+            }
+            
+            // Extreme Reading (Overbought/Oversold)
+            if (currHist !== null) {
+                if (zone.type === 'resistance' && currHist >= overboughtThreshold) {
+                    macdScore += 0.75;
+                    confluence.isMacdExtreme = 'overbought';
+                }
+                if (zone.type === 'support' && currHist <= oversoldThreshold) {
+                    macdScore += 0.75;
+                    confluence.isMacdExtreme = 'oversold';
+                }
+            }
+        }
+
+        const srScoreValue = touches * settings.srWeight;
+        const fibScoreValue = fibScore * settings.fibWeight;
+        const macdScoreValue = macdScore * settings.macdWeight;
+        const totalScore = srScoreValue + fibScoreValue + macdScoreValue;
+
+        return { 
+            startPrice, 
+            endPrice, 
+            type: zone.type, 
+            touches, 
+            score: totalScore, 
+            confluence,
+            scoreDetails: {
+                srScore: srScoreValue,
+                fibScore: fibScoreValue,
+                macdScore: macdScoreValue,
+            }
+        };
     }).filter(z => z.score >= settings.zoneScoreThreshold);
 };
 
@@ -84,6 +142,12 @@ const buildHtfReason = (htfTrend: string, zone: SRZone): string => {
     }
     if (zone.confluence?.hasMacdDiv) {
         confluenceDetails.push(`detail-macd-div`);
+    }
+    if (zone.confluence?.hasMacdZeroCross) {
+        confluenceDetails.push(`detail-macd-zerocross-${zone.confluence.hasMacdZeroCross}`);
+    }
+    if (zone.confluence?.isMacdExtreme) {
+        confluenceDetails.push(`detail-macd-extreme-${zone.confluence.isMacdExtreme}`);
     }
     if (confluenceDetails.length > 0) {
         htfReasonPart += `:${confluenceDetails.join('&')}`;
@@ -180,10 +244,13 @@ class BacktestEngine {
                 let direction: 'LONG' | 'SHORT' | null = null;
                 let stopLossPrice: number | null = null;
                 const stopLossCandidates: number[] = [];
+                let activeZone: SRZone | null = null;
+
 
                 if (activeSupportZone && canGoLong) {
                     const htfReason = buildHtfReason(htfTrend, activeSupportZone);
                     direction = 'LONG';
+                    activeZone = activeSupportZone;
                     if (this.settings.usePinbar && isPinbar(candle) === 'bullish') {
                         reasons.push(`${htfReason}|model-pinbar:detail-pinbar-bullish`);
                         stopLossCandidates.push(candle.low - atrVal * this.settings.atrMultiplier);
@@ -201,6 +268,7 @@ class BacktestEngine {
                 else if (activeResistanceZone && canGoShort) {
                     const htfReason = buildHtfReason(htfTrend, activeResistanceZone);
                     direction = 'SHORT';
+                    activeZone = activeResistanceZone;
                      if (this.settings.usePinbar && isPinbar(candle) === 'bearish') {
                         reasons.push(`${htfReason}|model-pinbar:detail-pinbar-bearish`);
                         stopLossCandidates.push(candle.high + atrVal * this.settings.atrMultiplier);
@@ -216,8 +284,14 @@ class BacktestEngine {
                     if (stopLossCandidates.length > 0) stopLossPrice = Math.max(...stopLossCandidates);
                 }
 
-                if (reasons.length > 0 && direction && stopLossPrice !== null) {
-                    this.openPosition(direction, candle.close, stopLossPrice, candle.time, reasons.join(', '));
+                if (reasons.length > 0 && direction && stopLossPrice !== null && activeZone) {
+                    const scoreDetails = activeZone.scoreDetails ? {
+                        total: activeZone.score,
+                        sr: activeZone.scoreDetails.srScore,
+                        fib: activeZone.scoreDetails.fibScore,
+                        macd: activeZone.scoreDetails.macdScore,
+                    } : undefined;
+                    this.openPosition(direction, candle.close, stopLossPrice, candle.time, reasons.join(', '), scoreDetails);
                 }
             }
             
@@ -236,7 +310,14 @@ class BacktestEngine {
         };
     }
     
-    private openPosition(type: 'LONG' | 'SHORT', entryPrice: number, stopLoss: number, time: number, reason: string) {
+    private openPosition(
+        type: 'LONG' | 'SHORT', 
+        entryPrice: number, 
+        stopLoss: number, 
+        time: number, 
+        reason: string,
+        zoneScoreDetails?: TradeLogEvent['zoneScoreDetails']
+    ) {
         const riskPerUnit = Math.abs(entryPrice - stopLoss);
         if (riskPerUnit === 0) return;
 
@@ -253,7 +334,7 @@ class BacktestEngine {
 
         this.position = { type, entryPrice, sizeInQuote, sizeInBase, stopLoss, takeProfit, entryTime: time, liquidationPrice };
         
-        this.tradeLog.push({ type: 'ENTRY', direction: type, time, price: entryPrice, positionSize: sizeInBase, equity: this.equity, reason, riskRewardRatio: this.settings.minRiskReward, stopLoss, takeProfit, leverage, liquidationPrice });
+        this.tradeLog.push({ type: 'ENTRY', direction: type, time, price: entryPrice, positionSize: sizeInBase, equity: this.equity, reason, riskRewardRatio: this.settings.minRiskReward, stopLoss, takeProfit, leverage, liquidationPrice, zoneScoreDetails });
     }
     
     private closePosition(exitPrice: number, time: number, reason: 'STOP_LOSS' | 'TAKE_PROFIT' | 'END_OF_DATA' | 'LIQUIDATION') {

@@ -42,6 +42,7 @@ export const zh = {
   'zoomIn': '放大',
   'zoomOut': '缩小',
   'resetZoom': '重置缩放',
+  'scrollToLatest': '滚动至最新',
   'tooltipOpen': '开',
   'tooltipHigh': '高',
   'tooltipLow': '低',
@@ -128,6 +129,7 @@ export const zh = {
   'log-rr': '盈亏比',
   'log-sl': '止损价格',
   'log-tp': '止盈价格',
+  'log-zoneScore': '区域评分',
   'direction-LONG': '做多',
   'direction-SHORT': '做空',
   'type-ENTRY': '开仓',
@@ -151,6 +153,10 @@ export const zh = {
   'detail-smc-bearish': '测试看跌失衡区',
   'detail-fib': '斐波那契回撤',
   'detail-macd-div': 'MACD 背离',
+  'detail-macd-zerocross-bullish': 'MACD 看涨零轴穿越',
+  'detail-macd-zerocross-bearish': 'MACD 看跌零轴拒绝',
+  'detail-macd-extreme-overbought': 'MACD 超买区',
+  'detail-macd-extreme-oversold': 'MACD 超卖区',
   
   // Prediction Panel
   'predictionTitle': '交易信号预测',

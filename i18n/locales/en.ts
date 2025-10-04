@@ -43,6 +43,7 @@ export const en = {
   'zoomIn': 'Zoom In',
   'zoomOut': 'Zoom Out',
   'resetZoom': 'Reset Zoom',
+  'scrollToLatest': 'Go to Latest',
   'tooltipOpen': 'O',
   'tooltipHigh': 'H',
   'tooltipLow': 'L',
@@ -129,6 +130,7 @@ export const en = {
   'log-rr': 'R/R',
   'log-sl': 'Stop Loss',
   'log-tp': 'Take Profit',
+  'log-zoneScore': 'Zone Score',
   'direction-LONG': 'LONG',
   'direction-SHORT': 'SHORT',
   'type-ENTRY': 'ENTRY',
@@ -152,6 +154,10 @@ export const en = {
   'detail-smc-bearish': 'Test of Bearish Imbalance',
   'detail-fib': 'Fib Retracement',
   'detail-macd-div': 'MACD Divergence',
+  'detail-macd-zerocross-bullish': 'MACD Bullish Zero Cross',
+  'detail-macd-zerocross-bearish': 'MACD Bearish Rejection',
+  'detail-macd-extreme-overbought': 'MACD Overbought',
+  'detail-macd-extreme-oversold': 'MACD Oversold',
 
   // Prediction Panel
   'predictionTitle': 'Trade Signal Prediction',

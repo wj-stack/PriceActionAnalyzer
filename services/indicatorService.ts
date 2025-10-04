@@ -185,7 +185,7 @@ export const findMacdDivergence = (
 
     // Find last two swing highs for bearish divergence
     const highPoints: { index: number; price: number }[] = [];
-    for (let i = lookback - 5; i > 5; i--) {
+    for (let i = lookback - 2; i >= 2; i--) {
         if (
             priceSlice[i].high > priceSlice[i - 1].high &&
             priceSlice[i].high > priceSlice[i - 2].high &&
@@ -211,7 +211,7 @@ export const findMacdDivergence = (
 
     // Find last two swing lows for bullish divergence
     const lowPoints: { index: number; price: number }[] = [];
-    for (let i = lookback - 5; i > 5; i--) {
+    for (let i = lookback - 2; i >= 2; i--) {
         if (
             priceSlice[i].low < priceSlice[i - 1].low &&
             priceSlice[i].low < priceSlice[i - 2].low &&

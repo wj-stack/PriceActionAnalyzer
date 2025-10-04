@@ -1,4 +1,3 @@
-
 import React from 'react';
 import type { BacktestResult, BacktestKPIs, TradeLogEvent, Candle } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -50,7 +49,19 @@ const TradeLogTable: React.FC<{ log: TradeLogEvent[] }> = ({ log }) => {
         return <div className="p-4 text-center text-gray-500">{t('noTrades')}</div>;
     }
 
-    const headers = ['type', 'direction', 'time', 'price', 'positionSize', 'rr', 'sl', 'tp', 'profit', 'equity', 'reason'];
+    const headers = ['type', 'direction', 'time', 'price', 'positionSize', 'zoneScore', 'rr', 'sl', 'tp', 'profit', 'equity', 'reason'];
+
+    const renderScoreCell = (scoreDetails?: TradeLogEvent['zoneScoreDetails']) => {
+        if (!scoreDetails) return '-';
+        return (
+            <div className="flex flex-col text-xs font-mono">
+                <span className="font-bold text-gray-300">T: {scoreDetails.total.toFixed(2)}</span>
+                <span className="text-gray-500">S/R: {scoreDetails.sr.toFixed(1)}</span>
+                <span className="text-gray-500">Fib: {scoreDetails.fib.toFixed(1)}</span>
+                <span className="text-gray-500">MACD: {scoreDetails.macd.toFixed(1)}</span>
+            </div>
+        );
+    };
 
     const renderReasonCell = (reason?: string) => {
         if (!reason) return '-';
@@ -139,6 +150,7 @@ const TradeLogTable: React.FC<{ log: TradeLogEvent[] }> = ({ log }) => {
                             <td className="px-4 py-2 text-gray-400">{new Date(item.time * 1000).toLocaleString()}</td>
                             <td className="px-4 py-2 font-mono">{formatNumber(item.price, false, 4)}</td>
                             <td className="px-4 py-2 font-mono">{formatNumber(item.positionSize, false, 6)}</td>
+                            <td className="px-4 py-2">{renderScoreCell(item.zoneScoreDetails)}</td>
                             <td className="px-4 py-2 font-mono">{item.riskRewardRatio ? `1:${item.riskRewardRatio}` : '-'}</td>
                             <td className="px-4 py-2 font-mono">{formatNumber(item.stopLoss, false, 4)}</td>
                             <td className="px-4 py-2 font-mono">{formatNumber(item.takeProfit, false, 4)}</td>

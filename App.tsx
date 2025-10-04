@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PriceChart } from './components/PriceChart';

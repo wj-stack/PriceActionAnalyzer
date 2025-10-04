@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export const KeyIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (

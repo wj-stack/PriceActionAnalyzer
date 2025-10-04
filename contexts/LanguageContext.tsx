@@ -1,5 +1,5 @@
 
-import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
+import React, { createContext, useState, useCallback, useContext } from 'react';
 import { resources, defaultLocale, Locale } from '../i18n';
 
 interface LanguageContextType {
@@ -11,7 +11,7 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [locale, setLocale] = useState<Locale>(defaultLocale);
 
   // FIX: Implemented string interpolation to replace placeholders like {{key}}.
